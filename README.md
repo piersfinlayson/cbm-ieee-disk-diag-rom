@@ -21,12 +21,13 @@ The ROM uses the drive's LEDs to indicate status:
 | LED Pattern | Meaning |
 |-------------|---------|
 | All LEDs solid on | Diagnostics ROM is unable to run (*) |
+| All LEDs blink briefly | Diags ROM has completed a test and is moving onto the next |
 | ERR LED solid on | Testing zero page |
 | DR0, DR1, ERR leds strobing | Testing static RAM |
 | ERR LED off, DR0/DR1 flashing | Al tests passed (**) |
 | ERR LED and drive 0 LEDs flashing together | Zero page test failed in UC1 6532 |
 | ERR LED and drive 1 LEDs flashing together | Zero page test failed in UE1 6532 (+) |
-| ERR LED solid, DR1 light flashing | Static RAM check failed (++) |
+| ERR LED solid, DR1 light flashing, all lights go off, then restarts | Static RAM check failed (++) |
 
 (*) Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you probably have some issue with the main RESET circuit, or corruption on the 6502 address bus, or shared data bus, that is preventing proper communication between components.
 

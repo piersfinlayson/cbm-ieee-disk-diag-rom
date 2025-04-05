@@ -22,9 +22,11 @@ TEST_HIGH_BYTE = $01
 RAM_BYTE_TEST = $02             ; Can be re-used after RAM test subroutine
 RAM_ERROR_CHIP_NUM = $03        ; Can be re-used after RAM error subroutine
 RAM_ERROR_FLASH_COUNT = $04     ; Can be re-used once RAM error subroutine
-DELAY_TEMP = $05                ; Can be re-used when delay subroutine not
+DELAY_TEMP_X = $05              ; Can be re-used when delay subroutine not
                                 ; being used
-DEVICE_ID = $06                 ; Do not re-use
+DELAY_TEMP_Y = $06              ; Can be re-used when delay subroutine not
+                                ; being used
+DEVICE_ID = $07                 ; Do not re-use
 
 ; RIOT chip addresses
 RIOT_UE1_PBD = $0282
@@ -55,16 +57,16 @@ ALL_LEDS = ERR_LED | DR0_LED | DR1_LED
 ; We want the diagnostics ROM entry point to be at $D005, so we pad with
 ; another byte and then jump to the start of the zero-page tested and stack
 ; enabled part of our code.
-.org $0000
+.segment "DIAGS"
 .byte $55
 .byte MAJOR_VERSION
 .byte MINOR_VERSION
 .byte PATCH_VERSION
 .byte RESERVED
-    JMP ram_test    ; Jump to the start of the code - we ship the zero page
-                    ; test, and setting up the stack, as the main ROM has
-                    ; already done that when we're the dignostics ROM.  No
-                    ; point in JSR and RTS here, as the main ROM JMPs to us.
+    JMP d000_rom_start  ; Jump to the start of the code - we ship the zero page
+                        ; test, and setting up the stack, as the main ROM has
+                        ; already done that when we're the dignostics ROM.  No
+                        ; point in JSR and RTS here, as the main ROM JMPs to us.
 
 .segment "DATA"
 AuthorString: CbmString "piers.rocks"
@@ -109,6 +111,10 @@ zp_test:
 setup_stack:
     LDX #$FF    ; Set up stack pointer
     TXS         ; Set up stack pointer to $1FF
+
+; Betwen tests - had to wait til stack was setup before calling
+d000_rom_start:
+    JSR between_tests
 
 ; Run the RAM test
 ;
@@ -158,13 +164,17 @@ ram_test:
     ; We are done with the current RAM chip.  Increment the page number by
     ; $10, to move to the next RAM chip
     TXA         ; Reload the upper byte of the address
+    AND #$F0    ; Isolate the upper nibble (the page number)
     CLC         ; Clear carry bit to avoid affecting the add - although it
                 ; probably wasn't set
     ADC #$10    ; Add $10 to the page number (moves from $1000 to $2000,
                 ; $2000 to $3000, etc)
     TAX         ; Store the new page number in X
-    AND #$50    ; If we got to $5000, we are done with the RAM test 
-    BEQ @led_pattern ; Starting testing the next chip
+    CPX #$50    ; Check if we are done with the RAM test
+    BNE @led_pattern    ; Starting testing the next chip
+
+; Betwen tests
+    JSR between_tests
 
 ; Get the hardware configured device ID from the drive.
 ; Lines PB0, PB1 and PB2 are used to select this.  If they are low, they are
@@ -177,29 +187,32 @@ get_device_id:
     ORA #$08            ; Add 8 to get the device ID.
     STA DEVICE_ID       ; Store the device ID in zero page
 
+; Betwen tests
+    JSR between_tests
+
 ; Our diagnostics routine is now done, so we turn off the ERR LED and flash
 ; flash the DR0 and DR1 LEDs a number of times to co-incide with our device ID.
 ; Then pause for 1 second and start again.
 finished:
-    LDA #$00                   ; Initialize the flash count to 0
-@outer_loop:
-    LDX #$80                    ; Set X to 128 (~0.5s delay)
-@inner_loop:
+    LDA #$00                    ; Initialize the flash count to 0
+    ; Pause before starting
+    LDX #$B0                    ; Set X to $B0 (0.75 second delay, added to
+                                ; 0.25s delay at end of last flash = 1s)
+    JSR delay                   ; Call delay routine
+    LDX #$40                    ; Set X to 64 (~0.25s delay)
+@flash_loop:
+    CMP DEVICE_ID               ; Compare the flash count with the device ID
+    BEQ finished                ; If equal, we are done flashing the LEDs this
+                                ; time around
     LDY #(DR0_LED | DR1_LED)    ; Set DR0 and DR1 LEDs on
     STY RIOT_UE1_PBD
     JSR delay                   ; Call delay routine
     LDY #$00                    ; Turn off all LEDs
     STY RIOT_UE1_PBD
     JSR delay                   ; Call delay routine
+    CLC                         ; Clear carry bit before adding just in case
     ADC #$01                    ; Increment the flash count
-    CMP DEVICE_ID               ; Compare with the device ID
-    BNE @inner_loop             ; If not done, loop back to flash the LEDs
-                                ; another time
-    ; Pause before starting again
-    LDA #$00                    ; Reset flash count
-    LDX #$FF                    ; Set X to 255 (1 second delay)
-    JSR delay                   ; Call delay routine
-    JMP @outer_loop             ; Start flashing again
+    JMP @flash_loop             ; Loop back to flash the LEDs again
 
 ; ram_byte_test
 ;
@@ -223,12 +236,13 @@ ram_byte_test:
     EOR #$FF            ; Invert the test pattern
     STA RAM_BYTE_TEST   ; Store inverted test pattern in zero page
     LDA (TEST_PTR),Y    ; Read back the byte from RAM
-    LDY TEST_LOW_BYTE   ; Reload Y - as it's required by the caller
     EOR RAM_BYTE_TEST   ; XOR with the inverted test pattern
-    BNE @ram_error      ; If not zero, test failed - jump to bad RAM handler
-    RTS                 ; Return from subroutine
-@ram_error:
-    JSR ram_error
+    EOR #$FF            ; Check the result was all 1s but EORing with $FF
+    BEQ @return         ; If zero, test succeeded, so return
+    JSR ram_error       ; If not zero, test failed, so report error
+@return:
+    LDY TEST_LOW_BYTE   ; Reload Y register (no need to reload X, we didn't
+                        ; change it)
     RTS                 ; Return from subroutine
 
 ; Zero page test failed.  Flash all ERR LED and specific drive LED, with 0.5s
@@ -300,31 +314,47 @@ ram_error:
     STA RAM_ERROR_CHIP_NUM      ; Store the chip number in zero page
     LDA #$00                    ; Load A with 0 - counter for the number of
                                 ; flashes done so far
-    STA RAM_ERROR_FLASH_COUNT   ; Store in zero page
 @begin:
     LDX #$40                ; Set flash delay to 1/4 second
 @flash_loop:
-    LDA #ERR_LED | DR1_LED  ; Set ERR LED and DR1 LED on to show error
-    STA RIOT_UE1_PBD
+    LDY #ERR_LED | DR1_LED  ; Set ERR LED and DR1 LED on to show error
+    STY RIOT_UE1_PBD
     JSR delay               ; Call delay routine
-    LDA #ERR_LED            ; Turn off DR1 LED, leave ERR on
-    STA RIOT_UE1_PBD
+    LDY #ERR_LED            ; Turn off DR1 LED, leave ERR on
+    STY RIOT_UE1_PBD
     JSR delay               ; Call delay routine
     ; Test if we are done flashing the LED this time around
-    LDA RAM_ERROR_FLASH_COUNT   ; Load A with the number of flashes done
-    ADC #$01                    ; Increment it
+    CLC                     ; Clear carry bit before adding just in case    
+    ADC #$01                    ; Increment flash count
     CMP RAM_ERROR_CHIP_NUM      ; Compare with the number of flashes to do
     BNE @flash_loop             ; If not done, loop back to flash the LED again
     ; We are done flashing the LED, this time around so turn off the LEDs and
     ; pause for longer
-    LDX #$ff            ; Set delay to 1 second
-    LDA #$00            ; Turn off all LEDs
-    STA RIOT_UE1_PBD
+    LDX #$B0            ; Set delay to 0.75s, so 1s added to previous 0.25s
+    LDY #$00            ; Turn off all LEDs
+    STY RIOT_UE1_PBD
     JSR delay           ; Call delay routine
     ; Now we need to reset the flash count and start again
     LDA #$00            ; Reset the flash count
-    STA RAM_ERROR_FLASH_COUNT
     JMP @begin ; Loop back to start flashing the LEDs
+
+; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
+; mark the transition from one test to the next.
+between_tests:
+    LDX #$00            ; Set X to 0 (1s delay)
+    STX RIOT_UE1_PBD    ; Turn off all LEDs
+    JSR delay           ; Call delay routine
+
+    LDX #$40            ; Set X to 64 (0.25s delay)
+    LDA #ALL_LEDS       ; Set all LEDs on
+    STA RIOT_UE1_PBD
+    JSR delay
+
+    LDX #$00            ; Set X to 0 (1s delay)
+    STX RIOT_UE1_PBD    ; Turn off all LEDs
+    JSR delay           ; Call delay routine
+
+    RTS                 ; Return
 
 ; Configurable delay routine.
 ;
@@ -336,21 +366,23 @@ ram_error:
 ; The timing of this routine is rough - it delays slightly under the requested
 ; time.
 delay:
-    STY DELAY_TEMP  ; Save Y register
+    STX DELAY_TEMP_X    ; Save X register
+    STY DELAY_TEMP_Y    ;  Save Y register
 @x_loop:
-    LDY #$00        ; Y will count from 0 (256 iterations)
+    LDY #$00            ; Y will count from 0 (256 iterations)
 @y_loop:
-    NOP             ; 2 cycles
-    NOP             ; 2 cycles 
-    NOP             ; 2 cycles
-    NOP             ; 2 cycles
-    NOP             ; 2 cycles
-    DEY             ; 2 cycles
-    BNE @y_loop     ; 3/2 cycles
-    DEX             ; 2 cycles
-    BNE @x_loop     ; 3/2 cycles
-    LDY DELAY_TEMP  ; Restore Y register
-    RTS             ; 6 cycles
+    NOP                 ; 2 cycles
+    NOP                 ; 2 cycles 
+    NOP                 ; 2 cycles
+    NOP                 ; 2 cycles
+    NOP                 ; 2 cycles
+    DEY                 ; 2 cycles
+    BNE @y_loop         ; 3/2 cycles
+    DEX                 ; 2 cycles
+    BNE @x_loop         ; 3/2 cycles
+    LDX DELAY_TEMP_X    ; Restore X register
+    LDY DELAY_TEMP_Y    ; Restore Y register
+    RTS                 ; 6 cycles
 
 ; Our no-op interrupt handler
 empty_handler:
