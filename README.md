@@ -28,7 +28,7 @@ Install them both on linux like so:
 sudo apt-get install cc65 make
 ```
 
-### 🧰 Compilation
+### 🧰Compilation
 
 ```bash
 # Compile for both possible ROM locations
