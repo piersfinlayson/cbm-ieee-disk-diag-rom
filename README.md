@@ -17,7 +17,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 
 ## 🔨Building From Source
 
-### Requirements
+### 📋Requirements
 
 - `ca65` assembler (part of the cc65 suite)
 - `make` (for building using the Makefile)
@@ -28,7 +28,7 @@ Install them both on linux like so:
 sudo apt-get install cc65 make
 ```
 
-### Compilation
+### 🧰 Compilation
 
 ```bash
 # Compile for both possible ROM locations
@@ -44,7 +44,7 @@ This produces two ROM images:
 - `diag_x040_f000.bin` - For installation at $F000
 - `diag_x040_d000.bin` - For installation at $D000
 
-## Installation
+## 📥Installation
 
 1. 🔥 Burn the appropriate ROM image to an EPROM/EEPROM:
    - Use `diag_x040_f000.bin` for installation at $F000
@@ -56,7 +56,7 @@ This produces two ROM images:
 
 If you want to fill a larger EEPROM with this ROM image, see [`flash_fill_1mbit.sh`](flash_fill_1mbit.sh).  You may need to modify the script for your EEPROM size.
 
-## Usage
+## 🚀Usage
 
 After installing the ROM:
 
@@ -66,7 +66,7 @@ After installing the ROM:
 
 To choose which ROM to install:
 
-### $F000 ROM replacement, UH1
+### 🔄$F000 ROM replacement, UH1
 
 If you are unsure whether your upper, $F000, ROM, located at UH1 is functional, replace it with the $F000 version of this diagnostics ROM.
 
@@ -74,7 +74,7 @@ In particular, this is helpful if you have all three LEDs light on your disk dri
 
 For a first test, you are best off removing the $E000 ROM (UL1) before running this diagnostics ROM at $F000, in case $E000/UL1 is faulty and causes address or data bus issues. 
 
-### $D000 ROM, UJ1
+### 🔄$D000 ROM, UJ1
 
 If you believe your stock $F000 and $E000 ROMs are functional (the three LEDs go out after powering on), and your UJ1 socket is free, you can install the $D000 version of this ROM at location UJ1.  You need both $F000 and $E000 to boot far enough to load the ROM installed at $D000.  If you suspect either ROM of being faulty, start with the $F000 replacement method, above.
 
@@ -86,7 +86,7 @@ DOS 2 firmware versions 901468-11/12/13 and 14/15/16 come as a 3 ROM set.
 
 When running as the $D000 ROM the zero page test is skipped - as the stock ROM has already done this test.
 
-## LED Indicators
+## 💡LED Indicators
 
 The ROM uses the drive's LEDs to indicate status:
 
@@ -117,7 +117,7 @@ The ROM uses the drive's LEDs to indicate status:
 - 3 flashes = UE4 or UE5
 - 4 flashes = UF4 or UF5
 
-## Technical Details
+## ⚙️Technical Details
 
 - 💻 Written in 6502 assembly language
 - 🧠 Tests the zero page memory ($0000-$00FF), provided by UC1 ($0000-$007F) and UE1 ($0080-$00FF)
@@ -135,10 +135,10 @@ It appears, from the fact that the stock DOS 1 ROMs support a $D000 diagnostics 
 In "Programming the PET/CBM", author Raeto states that the 2040 is difficult to upgrade as the PCB needs to be changed - the implication being to upgrade the ROMs.  I've not seen evidence of this - my 2040 and 3040 DOS 1 drives are very similar (the only hardware difference appears to be the addition of a double NOT gate on some of the clock lines presumably to clear up the signal), so I believe it would be perfectly possible to upgrade my 2040 to DOS 2 just by upgrading the ROMs.  It is possible there were earlier 2040s with a different PCB, although mine dates from 1978-9.
 
 
-## License
+## 📜License
 
 Licensed under the MIT License.  See [LICENSE](LICENSE).
 
-## Contributing
+## 🤝Contributing
 
 Contributions are welcome.  Please feel free to submit a Pull Request.
