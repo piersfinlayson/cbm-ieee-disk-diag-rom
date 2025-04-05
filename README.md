@@ -1,4 +1,4 @@
-# ieee-diag-rom
+# cbm-ieee-disk-diag-rom
 
 🛠️ A diagnostic ROM for Commodore 2040, 3040, and 4040 disk drives using the IEEE-488 interface.
 
