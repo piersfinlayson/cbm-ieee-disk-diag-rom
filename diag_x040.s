@@ -84,14 +84,18 @@ start:
 
 ; Test the zero page.  This is a very similar routine to that used in the
 ; stock DOS 1.2 ROM, 901468-06/07.
+;
+; We don't have zero page, stack or static RAM at this point as it's all
+; untested.  Therefore we only have A, X and Y registers to work with.  We
+; could also use S (via TXS and TSX).
 zp_test:
-    LDX #$00    ; Initialize X to 0 (start point for zero page RAM test)
-    LDY #$55    ; Load Y with $55 (01010101 - test pattern)
+    LDX #$00        ; Initialize X to 0 (start point for zero page RAM test)
+    LDY #$55        ; Load Y with $55 (01010101 - test pattern)
 @fill:
-    STY ZP,X    ; Store test pattern in zero page location X
-    DEX         ; Decrement X (note: wraps from 0 to 255)
-    BNE @fill   ; Loop until all zero page locations are filled with test
-                ; pattern
+    STY ZP,X        ; Store test pattern in zero page location X
+    DEX             ; Decrement X (note: wraps from 0 to 255)
+    BNE @fill       ; Loop until all zero page locations are filled with test
+                    ; pattern
 @test:
     LDA #$AA        ; Load A with $AA (10101010 - complement of test pattern)
     ASL ZP,X        ; Shift left memory at ZP+X (turns $55 into $AA)
@@ -306,16 +310,17 @@ zp_error:
 ; failed RAM chip.  Once done with our flashes, we will turn off the ERR LED
 ; for 1s and then start again.
 ram_error:
-    LDA TEST_HIGH_BYTE  ; Load A with the upper byte of the failed address
-    LSR A               ; Shift right 4 times to get the failed chip number
+    LDA TEST_HIGH_BYTE      ; Load A with the upper byte of the failed address
+    LSR A                   ; Shift right 4 times to get the failed chip number
     LSR A
     LSR A
     LSR A
     STA RAM_ERROR_CHIP_NUM  ; Store the chip number in zero page
 @begin:
-    LDA #$00    ; Load A with 0 - counter for the number of flashes done so far
-    LDX #$40    ; Set flash delay to 1/4 second
-    CLC         ; Clear carry bit before adding, below
+    LDA #$00                ; Load A with 0 - counter for the number of
+                            ;flashes done so far
+    LDX #$40                ; Set flash delay to 1/4 second
+    CLC                     ; Clear carry bit before adding, below
 @flash_loop:
     LDY #ERR_LED | DR1_LED  ; Set ERR LED and DR1 LED on to show error
     STY RIOT_UE1_PBD
@@ -332,11 +337,11 @@ ram_error:
 @pause_flashing:
     ; We have flashed the right number of times - so now turn both LEDs off
     ; and pause for 1 second
-    LDY #$00            ; Turn off all LEDs
+    LDY #$00                ; Turn off all LEDs
     STY RIOT_UE1_PBD
-    LDX #$00            ; Set delay to 1s
-    JSR delay           ; Call delay routine
-    JMP @begin ; Loop back to start flashing the LEDs
+    LDX #$00                ; Set delay to 1s
+    JSR delay               ; Call delay routine
+    JMP @begin              ; Loop back to start flashing the LEDs
 
 ; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
 ; mark the transition from one test to the next.
