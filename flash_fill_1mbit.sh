@@ -1,11 +1,46 @@
 #!/bin/bash
+# Fills a 1Mbit (128KB) file with copies of the F000 or D000 image.
+# Usage: ./script_name.sh [f000|d000]
+# Default is f000 if no argument provided
 
-# Fills a 1Mbit (128KB) file with copies of the F000 image.  Useful for
-# flashing the F000 image to a 1Mbit flash chip.
+# Function to display help information
+show_help() {
+    echo "Usage: $0 [OPTION]"
+    echo "Fills a 1Mbit (128KB) file with copies of the F000 or D000 image."
+    echo
+    echo "Options:"
+    echo "  f000        Use F000 image (default if no option specified)"
+    echo "  d000        Use D000 image"
+    echo "  -h, -?, --help  Display this help and exit"
+    echo
+    echo "Example:"
+    echo "  $0          # Uses F000 image by default"
+    echo "  $0 d000     # Uses D000 image"
+    echo "  $0 --help   # Displays this help message"
+    exit 0
+}
 
-# Input and output files
-INPUT_FILE="diag_x040_f000.bin"
-OUTPUT_FILE="f000_1mbit.bin"
+# Process command line argument
+IMAGE_TYPE="f000"  # Default value
+if [ $# -gt 0 ]; then
+    case "$1" in
+        "f000"|"d000")
+            IMAGE_TYPE="$1"
+            ;;
+        "-h"|"-?"|"--help")
+            show_help
+            ;;
+        *)
+            echo "Error: Unrecognized option '$1'"
+            echo "Use '$0 --help' for more information."
+            exit 1
+            ;;
+    esac
+fi
+
+# Input and output files based on the image type
+INPUT_FILE="diag_x040_${IMAGE_TYPE}.bin"
+OUTPUT_FILE="${IMAGE_TYPE}_1mbit.bin"
 
 # Size of 1Mbit in bytes (1,048,576 bits = 131,072 bytes)
 MBIT_SIZE=$((1024 * 1024 / 8))
@@ -18,7 +53,6 @@ fi
 
 # Get the size of the input file in bytes
 INPUT_SIZE=$(stat -c %s "$INPUT_FILE")
-
 echo "Input file size: $INPUT_SIZE bytes"
 echo "Target size (1Mbit): $MBIT_SIZE bytes"
 
@@ -31,7 +65,6 @@ fi
 # Calculate how many copies we need
 COPIES=$((MBIT_SIZE / INPUT_SIZE))
 REMAINDER=$((MBIT_SIZE % INPUT_SIZE))
-
 echo "Creating $OUTPUT_FILE with $COPIES complete copies and $REMAINDER additional bytes..."
 
 # Create/truncate output file
