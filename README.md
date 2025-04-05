@@ -4,12 +4,12 @@
 
 ## Overview
 
-This project provides a simple diagnostics ROM for early Commodore disk drives (2040, 3040, and 4040). It performs basic memory tests and provides visual feedback through the drive's LEDs.
+This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, and 4040). It performs basic memory tests and provides visual feedback through the drive's LEDs.
 
 ## Features
 
-- ✅ Zero page memory testing
-- 💡 Visual status indication via drive LEDs
+- ✅ Zero page and static RAM testing
+- 💡 Visual status indication and failed components via drive LEDs
 - 🧪 Simple diagnostic functionality
 - 📦 Compatible with multiple disk drive models
 - 🔄 Can be installed at either $D000 or $F000 ROM locations
@@ -20,15 +20,25 @@ The ROM uses the drive's LEDs to indicate status:
 
 | LED Pattern | Meaning |
 |-------------|---------|
-| All LEDs solid on | (*) 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty |
+| All LEDs solid on | Diagnostics ROM is unable to run (*) |
 | ERR LED solid on | Testing zero page |
-| ERR LED off, DR0/DR1 flashing | Normal operation - Zero page test passed |
+| DR0, DR1, ERR leds strobing | Testing static RAM |
+| ERR LED off, DR0/DR1 flashing | Al tests passed (**) |
 | ERR LED and drive 0 LEDs flashing together | Zero page test failed in UC1 6532 |
-| ERR LED and drive 1 LEDs flashing together | (+) Zero page test failed in UE1 6532 |
+| ERR LED and drive 1 LEDs flashing together | Zero page test failed in UE1 6532 (+) |
+| ERR LED solid, DR1 light flashing | Static RAM check failed (++) |
 
-(*) There are other issues that can cause all LEDs to be stuck on.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you likely have some issue with the main RESET circuit, or corruption on the 6502 address bus, or shared data bus, that is preventing proper communication between components.
+(*) Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you probably have some issue with the main RESET circuit, or corruption on the 6502 address bus, or shared data bus, that is preventing proper communication between components.
+
+(**) Number of flashes before pause indicates the hardware configured device ID of this drive.
 
 (+) As UE1 is used to drive LEDs, this error may not be signaled via LEDs.
+
+(++) Number of flashes before pause indicates which static RAM chip has failed:
+* 1 flash = UC4 or UC5
+* 2 flashes = UD4 or UD5
+* 3 flashes = UE4 or UE5
+* 4 flashes = UF4 or UF5
 
 ## Building From Source
 
@@ -85,21 +95,22 @@ To choose which ROM to install:
 
 If you are unsure whether your upper, $F000, ROM, located at UH1 is functional, replace it with the $F000 version of this diagnostics ROM.
 
-In particular, this is helpful if you have all three LEDs light on your disk drive.  If they remain lit with this ROM you have a non-ROM issue.  If you see other LED patterns with this ROM, then it is likely one of your stock ROMs is faulty.
+In particular, this is helpful if you have all three LEDs light on your disk drive when booting with the original ROM.  If they remain lit with this ROM you have a non-ROM issue preventing the ROM code from being executed.  If you see other LED patterns with this ROM, then it one of your stock ROMs is probably faulty.
 
 ### $D000 ROM, UJ1
 
-If you believe your $F000 ROM is functional, install the $D000 version of this ROM at UJ1.
+If you believe your $F000 ROM is functional (the three LEDs go out after powering on), install the $D000 version of this ROM at location UJ1.
 
-Note if your drive has a $D000 ROM already installed it is likely your current ROMs don't not support a diagnostic ROM at $D000, so replace your $F000 with the $F000 version of this ROM instead.  This is typical of the 4040, although 2040 and 3040s may have been upgraded to three ROM operation.
-
+If your drive has a $D000 ROM already installed it is likely your current ROMs don't not support a diagnostic ROM at $D000, so replace your $F000 with the $F000 version of this ROM instead.  This is typical of the 4040, although 2040 and 3040s may have been upgraded to a three ROM configuration.
 
 ## Technical Details
 
 - 💻 Written in 6502 assembly language
 - 🧠 Tests the zero page memory ($0000-$00FF), provided by UC1 ($0000-$007F) and UE1 ($0080-$00FF)
+- 🧩 Tests the static RAM chips UC4/5 ($1000-$13FF), UD4/5 ($2000-$23FF), UE4/5 ($3000-$33FF), UF4/5 ($4000-$43FF).
 - ⚙️ Uses RIOT UE1 chip for lighting LED indicators
-- 🔍 Provides visual indication of memory test results
+- 🔍 Provides visual indication of failed memory test, allowing you to indentify and replace the failed chip
+- 💡 Reads the device ID from UE1 PB0-PB2 and indicates it by flashing the LEDs
 
 ## License
 
@@ -107,4 +118,4 @@ Licensed under the MIT License.  See [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome.  Please feel free to submit a Pull Request.
