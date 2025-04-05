@@ -21,7 +21,7 @@ jobs:
       run: make
       
     - name: Upload built ROMs
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v2
       with:
         name: diagnostic-rom
         path: |
