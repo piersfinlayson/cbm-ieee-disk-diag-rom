@@ -29,17 +29,21 @@ The ROM uses the drive's LEDs to indicate status:
 | ERR LED and drive 1 LEDs flashing together | Zero page test failed in UE1 6532 (+) |
 | ERR LED solid, DR1 light flashing, all lights go off, then restarts | Static RAM check failed (++) |
 
-(*) Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you probably have some issue with the main RESET circuit, or corruption on the 6502 address bus, or shared data bus, that is preventing proper communication between components.
+(*) Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you probably have some issue with either
+- the main RESET circuit
+- corruption on the 6502 address bus, or shared data bus
+- a failed 74LS157 (UC3/UD4/UE4/UF4)
+- something else that is preventing proper communication between components, on the data or (6502) address buses.
 
 (**) Number of flashes before pause indicates the hardware configured device ID of this drive.
 
 (+) As UE1 is used to drive LEDs, this error may not be signaled via LEDs.
 
 (++) Number of flashes before pause indicates which static RAM chip has failed:
-* 1 flash = UC4 or UC5
-* 2 flashes = UD4 or UD5
-* 3 flashes = UE4 or UE5
-* 4 flashes = UF4 or UF5
+- 1 flash = UC4 or UC5 (or one of the 74L157s may have failed)
+- 2 flashes = UD4 or UD5
+- 3 flashes = UE4 or UE5
+- 4 flashes = UF4 or UF5
 
 ## Building From Source
 

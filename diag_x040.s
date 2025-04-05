@@ -311,31 +311,31 @@ ram_error:
     LSR A
     LSR A
     LSR A
-    STA RAM_ERROR_CHIP_NUM      ; Store the chip number in zero page
-    LDA #$00                    ; Load A with 0 - counter for the number of
-                                ; flashes done so far
+    STA RAM_ERROR_CHIP_NUM  ; Store the chip number in zero page
 @begin:
-    LDX #$40                ; Set flash delay to 1/4 second
+    LDA #$00    ; Load A with 0 - counter for the number of flashes done so far
+    LDX #$40    ; Set flash delay to 1/4 second
+    CLC         ; Clear carry bit before adding, below
 @flash_loop:
     LDY #ERR_LED | DR1_LED  ; Set ERR LED and DR1 LED on to show error
     STY RIOT_UE1_PBD
     JSR delay               ; Call delay routine
+    ; Test if we are done flashing the LED this time around
+    ADC #$01                ; Increment flash count
+    CMP RAM_ERROR_CHIP_NUM  ; Compare with the number of flashes to do
+    BEQ @pause_flashing     ; If done flashing finish up
+    ; Turn off the DR1 LED, leaving ERR on
     LDY #ERR_LED            ; Turn off DR1 LED, leave ERR on
     STY RIOT_UE1_PBD
-    JSR delay               ; Call delay routine
-    ; Test if we are done flashing the LED this time around
-    CLC                     ; Clear carry bit before adding just in case    
-    ADC #$01                    ; Increment flash count
-    CMP RAM_ERROR_CHIP_NUM      ; Compare with the number of flashes to do
-    BNE @flash_loop             ; If not done, loop back to flash the LED again
-    ; We are done flashing the LED, this time around so turn off the LEDs and
-    ; pause for longer
-    LDX #$B0            ; Set delay to 0.75s, so 1s added to previous 0.25s
+    JSR delay               ; Call delay routine with same delay as before
+    JMP @flash_loop         ; Loop back to flash the LED again
+@pause_flashing:
+    ; We have flashed the right number of times - so now turn both LEDs off
+    ; and pause for 1 second
     LDY #$00            ; Turn off all LEDs
     STY RIOT_UE1_PBD
+    LDX #$00            ; Set delay to 1s
     JSR delay           ; Call delay routine
-    ; Now we need to reset the flash count and start again
-    LDA #$00            ; Reset the flash count
     JMP @begin ; Loop back to start flashing the LEDs
 
 ; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
