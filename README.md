@@ -17,7 +17,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 
 ## 📥Installation
 
-Either [Build From Source](#building-from-source) or download the ROM from the [releases page](https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom/releases/).
+Either [Build From Source](#building-from-source) or download the ROMs from the [releases page](https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom/releases/).
 
 1. 🔥 Burn the appropriate ROM image to an EPROM/EEPROM:
    - Use `diag_x040_f000.bin` for installation at $F000
