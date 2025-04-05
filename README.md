@@ -15,36 +15,9 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - 🔄 Can be installed at either $F000 or $D000 (DOS 1 only) ROM locations
 - 🔍 Detects and reports the configured hardware device ID (8, 9, etc)
 
-## 🔨Building From Source
-
-### 📋Requirements
-
-- `ca65` assembler (part of the cc65 suite)
-- `make` (for building using the Makefile)
-
-Install them both on linux like so:
-
-```bash
-sudo apt-get install cc65 make
-```
-
-### 🧰Compilation
-
-```bash
-# Compile for both possible ROM locations
-make
-
-# Or manually:
-ca65 diag_x040.s -o diag_x040.o
-ld65 -C diag_x040_f000.cfg -o diag_x040_f000.bin diag_x040.o
-ld65 -C diag_x040_d000.cfg -o diag_x040_d000.bin diag_x040.o
-```
-
-This produces two ROM images:
-- `diag_x040_f000.bin` - For installation at $F000
-- `diag_x040_d000.bin` - For installation at $D000
-
 ## 📥Installation
+
+Either [Build From Source](#building-from-source) or download the ROM from the [releases page](https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom/releases/).
 
 1. 🔥 Burn the appropriate ROM image to an EPROM/EEPROM:
    - Use `diag_x040_f000.bin` for installation at $F000
@@ -116,6 +89,35 @@ The ROM uses the drive's LEDs to indicate status:
 - 2 flashes = UD4 or UD5
 - 3 flashes = UE4 or UE5
 - 4 flashes = UF4 or UF5
+
+## 🔨Building From Source
+
+### 📋Requirements
+
+- `ca65` assembler (part of the cc65 suite)
+- `make` (for building using the Makefile)
+
+Install them both on linux like so:
+
+```bash
+sudo apt-get install cc65 make
+```
+
+### 🧰Compilation
+
+```bash
+# Compile for both possible ROM locations
+make
+
+# Or manually:
+ca65 diag_x040.s -o diag_x040.o
+ld65 -C diag_x040_f000.cfg -o diag_x040_f000.bin diag_x040.o
+ld65 -C diag_x040_d000.cfg -o diag_x040_d000.bin diag_x040.o
+```
+
+This produces two ROM images:
+- `diag_x040_f000.bin` - For installation at $F000
+- `diag_x040_d000.bin` - For installation at $D000
 
 ## ⚙️Technical Details
 
