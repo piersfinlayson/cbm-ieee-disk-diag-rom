@@ -1,0 +1,28 @@
+name: Build ROMs
+
+on:
+  push:
+    branches: [ main, test-github-actions ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+      
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y cc65 make
+      
+    - name: Build ROMs
+      run: make
+      
+    - name: Upload ROMs
+      uses: actions/upload-artifact@v4
+      with:
+        name: diagnostic-rom
+        path: |
+          *.bin
