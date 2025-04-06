@@ -65,34 +65,80 @@ The ROM uses the drive's LEDs to indicate status:
 
 | LED Pattern | Meaning |
 |-------------|---------|
-| All LEDs solid on | Diagnostics ROM is unable to run (*) |
-| All LEDs blink briefly | Diags ROM has completed a test and is moving onto the next |
-| ERR LED solid on | Testing zero page |
-| DR0, DR1, ERR leds strobing | Testing static RAM |
-| ERR LED off, DR0/DR1 flashing | Al tests passed (**) |
-| ERR LED and drive 0 LEDs flashing together | Zero page test failed in UC1 6532 |
-| ERR LED and drive 1 LEDs flashing together | Zero page test failed in UE1 6532 (+) |
-| ERR LED solid, DR1 light flashing, D0 flashing, all lights go off, then flashing restarts | Static RAM check failed (++) |
+| ERR LED off, DR0/DR1 flashing | [All tests passed](#all-tests-passed) |
+| All LEDs solid on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) |
+| All LEDs blink briefly | [Moving to next test](#moving-to-next-test) |
+| ERR LED solid on | [Testing zero page](#testing-zero-page) |
+| DR0, DR1, ERR leds strobing | [Testing static RAM](#testing-static-ram) |
+| ERR LED and drive 0 LEDs flashing together | [Zero page test failed in UC1 6532](#zero-page-ram-uc1-failed) |
+| ERR LED and drive 1 LEDs flashing together | [Zero page test failed in UE1 6532](#zero-page-ram-ue1-failed) |
+| ERR LED solid, DR1 or DR0 light flashing, ERR goes out, sequence restarts | [Static RAM check failed](#static-ram-check-failed) |
 
-(*) Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you probably have some issue with either
+### All tests passed
+
+With the ERR LED off and the DR0/DR1 LEDs flashing rapidly all tests have passed.
+
+The number of flashes, before pausing, indicates the hardware configured device ID of this drive.
+
+### Diagnostics ROM failed to run
+
+In this scenario, all three LEDs will be lit.
+
+Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.
+
+First try replacing the 6502 and the UE1 6532 (you could try swapping UE1 and UC1 around).
+
+If the problem remains, you probably have an issue with either
 - the main RESET circuit
-- corruption on the 6502 address bus, or shared data bus
+- corruption on either the 6502 address bus or shared data bus
 - a failed 74LS157 (UC3/UD3/UE3/UF3)
 - something else that is preventing proper communication between components, on the data or (6502) address buses.
 
-(**) Number of flashes before pause indicates the hardware configured device ID of this drive.
+Sadly, as this diagnostics ROM requires address and data bus communication between the 6502, this ROM and the UE1 6532, corruption of these buses can cause issues this ROM cannot diagnose.  However, understanding this is useful to track the problem down.
 
-(+) As UE1 is used to drive LEDs, this error may not be signaled via LEDs.
+### Moving to next test
 
-(++) Number of Drive 1 flashes indicates which static RAM bank has failed:
-- 1 flash = UC4 or UC5 (or one of the 74L157s UC3/UD3/UE3/UF3 may have failed)
+A brief blink of all three LEDs indicates that a test has been completed, and the ROM is moving onto the next test.
+
+### Testing Zero Page
+
+The ERR LED is solidly lit while testing the zero page.  However, as this test is so brief, it may look like a very quick flash.  As the zero-page is tested immediately after boot, it will happening very soon after power on, after all three LEDs go out.
+
+### Testing Static RAM
+
+All three LEDs are used to indicate the static RAM test.  You should see a sequence as follows:
+- Testing bank $1000-$13FF (UC4/5) - DR1 illuminates
+- Testing bank $2000-$23FF (UD4/5) - DR1 goes out and DR0 illuminates
+- Testing bank $3000-$33FF (UE4/5) - DR1 and DR0 illuminate together
+- Testing bank $4000-£43FF (UF4/5) - DR1 and DR0 go out and ERR LED illuminates
+
+### Zero Page RAM UC1 failed 
+
+The ERR and DR0 LEDs flashing together signify a failed zero page test in the CE1 6532.
+
+### Zero Page RAM UE1 failed 
+
+The ERR and DR1 LEDs flashing together signify a failed zero page test in the UE1 6532.
+
+However, as UE1 is used to drive LEDs, if the entire chip has failed, this error will not be signaled via LEDs.  Instead you would just see [Diagnostics ROM failed to run](#-diagnostics-rom-failed-to-run).
+
+### Static RAM check failed
+
+In this scenario the ERR LED is lit while either the DR1 or DR0 LED flashes.  All LEDs go out after the flashing, and then the sequence starts again.
+
+DR0 flashing signifies a lower nibble RAM chip (UC4, UD4, UE4 or UF4) has failed.
+
+DR1 flashing signifies a upper nibble RAM chip (UC5, UD5, UE5, UF5) has failed.
+
+The Number of Drive LED flashes indicates which bank has failed:
+- 1 flash = UC4 or UC5
 - 2 flashes = UD4 or UD5
 - 3 flashes = UE4 or UE5
 - 4 flashes = UF4 or UF5
 
-(++) Number of Drive 0 flashes indicates which nibble has failed:
-- 1 flash = low nibble = U_4
-- 2 flashes = high nibble = U_5
+Together this information allows the precie failed static RAM chip to be identified.
+
+However, if UC4 is indicated as failed, it may, instead be one (or more) of the 74LS157s UC3/UD3/UE3/UF3 that has failed, or some other bus error preventing communucation with any of the RAM.  If replacing (or swapping around UC4) doesn't help, try removing the 6504 (UH3), 6530 (UK3) and 6522 (UM3) from the board and re-running the test.  This isolates those chip as potentially conflicting with the shared data bus. 
 
 ## 🔨Building From Source
 

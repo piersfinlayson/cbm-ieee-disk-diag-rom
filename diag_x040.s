@@ -24,8 +24,7 @@ DELAY_TEMP_X = $03          ; Can be re-used when delay subroutine not used
 DELAY_TEMP_Y = $04          ; Can be re-used when delay subroutine not used
 FLASH_COUNT = $05           ; Can be re-used after flash_led_error subroutine
 FLASH_LED_PATTERN = $06     ; Can be re-used after flash_led_error subroutine
-RAM_ERROR_CHIP_NUM = $07    ; Can be re-used after RAM error subroutine
-RAM_ERROR_NIBBLE = $08      ; Can be re-used after RAM test/error subroutines
+RAM_ERROR_NIBBLE = $07      ; Can be re-used after RAM test/error subroutines
 
 ; RIOT chip addresses
 RIOT_UE1_PBD = $0282
@@ -117,7 +116,8 @@ setup_stack:
     LDX #$FF    ; Set up stack pointer
     TXS         ; Set up stack pointer to $1FF
 
-; Between tests - had to wait til stack was setup before calling
+; Between tests - had to wait til stack was setup before calling.
+; This is also our $D000 ROM entry point, JMPed to by $D005.
 d000_rom_start:
     JSR between_tests
 
@@ -178,7 +178,7 @@ ram_test:
     CPX #$50    ; Check if we are done with the RAM test
     BNE @led_pattern    ; Starting testing the next chip
 
-; Betwen tests
+; Between tests
     JSR between_tests
 
 ; Get the hardware configured device ID from the drive.
@@ -192,11 +192,11 @@ get_device_id:
     ORA #$08            ; Add 8 to get the device ID.
     STA DEVICE_ID       ; Store the device ID in zero page
 
-; Betwen tests
+; Between tests
     JSR between_tests
 
 ; Our diagnostics routine is now done, so we turn off the ERR LED and flash
-; flash the DR0 and DR1 LEDs a number of times to co-incide with our device ID.
+; the DR0 and DR1 LEDs a number of times to co-incide with our device ID.
 ; Then pause for 1 second and start again.
 finished:
     LDA #$00                    ; Initialize the flash count to 0
@@ -250,7 +250,8 @@ ram_byte_test:
     CMP RAM_ERROR_NIBBLE    ; Compare with the actual value
     BEQ @check_upper        ; Lower nibble good - check upper nibble
     ; Lower nibble was wrong
-    LDA #$01                ; Set the error nibble value to 1
+    LDA #$02                ; Set the error nibble value to 2 to indicate the
+                            ; lower nibble test failed
     STA RAM_ERROR_NIBBLE    ; Store the error nibble in RAM_ERROR_NIBBLE
     JMP @error              ; Jump to error handler
 @check_upper:
@@ -263,7 +264,8 @@ ram_byte_test:
     CMP RAM_ERROR_NIBBLE    ; Compare with the actual value
     BEQ @return             ; If equal, test succeeded, so return
     ; Upper nibble was wrong
-    LDA #$02                ; Set the error nibble value to 2
+    LDA #$01                ; Set the error nibble value to 1 to indicate the
+                            ; upper nibble test failed
     STA RAM_ERROR_NIBBLE    ; Store the error nibble in RAM_ERROR_NIBBLE
 @error:
     JSR ram_error           ; If not zero, test failed, so report error
@@ -276,8 +278,9 @@ ram_byte_test:
 ; delay between flashes.  X indicates which byte failed.  We start at byte 0,
 ; then go down (255, 254 ... 1).  So If UC1 is dead, that failure will be
 ; detected first ($00), then UE1 ($FF).
-; As we have no zero page, we also have no stack, so we have to inline the
-; delay routine here.
+;
+; As we have no zero page, we also have no stack, so we have to inline
+; everything.
 zp_error:
     LDA #ERR_AND_1_LED      ; Set ERR LED and DR1 LED on to show error in left
                             ; hand 6532, UE1 - guess at this stage
@@ -322,46 +325,40 @@ zp_error:
 
 ; RAM test failed.
 ;
-; Zero page contains the address of the failed RAM location.  The upper byte
-; will be $10, $20, $30 or $40.  We will use the upper nibble to decide how
-; many DR1 flashes to do - 1 for $1000, 2 for $2000, 3 for $3000 and 4
-; for $4000.  $1000 is, UC5/UC4, $2000 is UD5/UD4, $3000 is UE5/UE4 and
-; $4000 is UF5/UF4.  We'll use RAMM_ERROR_NIBBLE for the number of DR0 flashes.
+; We flash DR0 for the lower nibble, and DR1 for the upper nibble. 
+; We flash the number of times of the upper byte top nibble (1, 2, 3 or 4).
+; Together this allows the user to identify precisely which RAM chip has
+; failed.
 ;
-; We will set ERR LED solid, flash the drive 1 LED (DR1) to identify the
-; failed RAM bank, and flash drive 0 LED (DR0) to identify which nibble failed,
-; with 1 flash for the lower, 2 for the higher..  Once done with our flashes,
-; we will turn off the ERR LED for 1s and then start again.
+; Upon calling, the zero page TEST_HIGH_BYTE location contains the address of
+; the failed RAM location.  The upper byte will be $1X, $2X, $3X or $4X, with
+; X being in the range 0-3 inclusive.  We will shift this byte right 4 times
+; to get the failed bank number (1-4), handily removing the lower nibble.
+;
+; RAM_ERROR_NIBBLE contains $01 for the upper nibble failing, $02 for the
+; lower nibble.  Hence by shifting this left 3 times we get $08 or $10, which
+; are the bit masks for DR1 (high) and DR0 (low) nibbles respectively.
 ram_error:
+    ; Figure out which DR LED to flash
+    LDA RAM_ERROR_NIBBLE    ; Load A with the error nibble
+    ASL A                   ; Shift left 3 times to set the DR LED to light
+    ASL A 
+    ASL A
+    TAY                     ; Store the DR LED pattern in Y
+    ; Figure out how many times to flash the DR LED
     LDA TEST_HIGH_BYTE      ; Load A with the upper byte of the failed address
     LSR A                   ; Shift right 4 times to get the failed chip number
     LSR A
     LSR A
     LSR A
-    STA RAM_ERROR_CHIP_NUM  ; Store the chip number in zero page
 @loop:
-    ; Flash the DR1 LED to identify the failed RAM bank
+    ; Flash the DR LED, with ERR on, to identify the failed RAM bank
     LDX #$40                ; Set flash delay to 1/4 second
-    LDY DR1_LED             ; Set LED to flash
-    LDA RAM_ERROR_CHIP_NUM  ; Set required number of flashes
-    JSR flash_led_error     ; Fash the required number of times
-
-    ; Pause for 1 second with just ERR LED on
-    LDX #$00                ; Set flash delay to 1 second
-    JSR delay
-
-    ; Flash the DR0 LED to identify the failed nibble
-    LDX #$40                ; Set flash delay to 1/4 second
-    LDY DR0_LED             ; Set LED to flash
-    LDA RAM_ERROR_NIBBLE    ; Set required number of flashes
     JSR flash_led_error     ; Flash the required number of times
-
     ; Pause with all LEDs off for 1 second
-    LDY #$00                ; Turn off all LEDs
-    STY RIOT_UE1_PBD
-    LDX #$00                ; Set delay to 1s
+    LDX #$00                ; Turn off all LEDs and set delay to 1s
+    STX RIOT_UE1_PBD        ; Turn off all LEDs
     JSR delay               ; Call delay routine
-
     ; Loop back to start flashing the LEDs
     JMP @loop
 
@@ -369,8 +366,11 @@ ram_error:
 ; Input: A = number of times to flash
 ;        Y = LED bitmask to flash (doesn't need to include ERR_LED)
 ;        X = delay value
-; X is left unchanged.  A and Y are changed.
-; Leaves ERR LED on.
+;
+; A, X and Y are restored before returning.
+;
+; Leaves ERR LED on in case the caller wants to immediately flash more LEDs
+; without the ERR LED going out.
 flash_led_error:
     STA FLASH_COUNT         ; Store target count
     TYA                     ; Save LED pattern in A
@@ -379,40 +379,44 @@ flash_led_error:
     LDA #$00                ; Initialize counter
     CLC                     ; Clear carry
 @loop:
+    ; Turn on appropriate LED, along with ERR LED
     LDY FLASH_LED_PATTERN   ; Turn on LEDs
     STY RIOT_UE1_PBD
     JSR delay               ; Pause
-
+    ; See if we're done flashing
     ADC #$01                ; Increment counter
     CMP FLASH_COUNT         ; Compare with target
     BEQ @done   
-
+    ; We're not done flashing, turn off all but ERR LED
     LDY #ERR_LED            ; Just ERR LED on
     STY RIOT_UE1_PBD
     JSR delay               ; Pause
-
     ; Go around the loop again
     JMP @loop
 @done:
+    ; Restore registers - X is never modified.
+    LDY FLASH_LED_PATTERN   ; Reload Y
+    LDA FLASH_COUNT         ; Reload A
     RTS                     ; Return
 
 ; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
 ; mark the transition from one test to the next.
 between_tests:
-    LDX #$00            ; Set X to 0 (1s delay)
-    STX RIOT_UE1_PBD    ; Turn off all LEDs
-    JSR delay           ; Call delay routine
-
-    LDX #$40            ; Set X to 64 (0.25s delay)
-    LDA #ALL_LEDS       ; Set all LEDs on
+    ; All off for 1s 
+    LDX #$00
+    STX RIOT_UE1_PBD
+    JSR delay
+    ; All on for 0.25s
+    LDX #$40
+    LDA #ALL_LEDS
     STA RIOT_UE1_PBD
     JSR delay
-
-    LDX #$00            ; Set X to 0 (1s delay)
-    STX RIOT_UE1_PBD    ; Turn off all LEDs
-    JSR delay           ; Call delay routine
-
-    RTS                 ; Return
+    ; All off for 1s 
+    LDX #$00
+    STX RIOT_UE1_PBD
+    JSR delay
+    ; Done
+    RTS
 
 ; Configurable delay routine.
 ;
