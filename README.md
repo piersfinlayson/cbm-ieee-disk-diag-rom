@@ -69,6 +69,8 @@ The ROM uses the drive's LEDs to indicate status:
 | All LEDs solid on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) |
 | All LEDs blink briefly | [Moving to next test](#moving-to-next-test) |
 | ERR LED solid on | [Testing zero page](#testing-zero-page) |
+| DR0/DR1 both blink twice quickly | [Attempted to pause 6504](#pausing-the-6504) |
+| All LEDs blink twice quickly | [Failed to pause 6504](#pausing-the-6504) |
 | DR0, DR1, ERR leds strobing | [Testing static RAM](#testing-static-ram) |
 | ERR LED and drive 0 LEDs flashing together | [Zero page test failed in UC1 6532](#zero-page-ram-uc1-failed) |
 | ERR LED and drive 1 LEDs flashing together | [Zero page test failed in UE1 6532](#zero-page-ram-ue1-failed) |
@@ -103,6 +105,14 @@ A brief blink of all three LEDs indicates that a test has been completed, and th
 ### Testing Zero Page
 
 The ERR LED is solidly lit while testing the zero page.  However, as this test is so brief, it may look like a very quick flash.  As the zero-page is tested immediately after boot, it will happening very soon after power on, after all three LEDs go out.
+
+### Pausing the 6504
+
+Before testing the static RAM, the diagnostics ROM attemptes to pause the 6504.  This is signalled by flashing DR0 and DR1 twice in very quick succession.  The ROM will wait for up to 1s for a response from the 6504 that it has paused.
+
+If a response is successfully received, the ROM will blink both drive LEDs again quickly before moving on.  If no response is received, the ROM will blink all three LEDs quickly, twice, before moving on.
+
+If this fails, it signifies either a 6504 failure, or possibly another component on the 6504 address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.  It may also be a problem with the shared data bus.  Be suspicious of this if, as well as a 6504 failure you, also get a [static RAM failure](#testing-static-ram). 
 
 ### Testing Static RAM
 

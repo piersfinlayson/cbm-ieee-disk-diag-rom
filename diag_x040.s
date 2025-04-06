@@ -25,6 +25,11 @@ DELAY_TEMP_Y = $04          ; Can be re-used when delay subroutine not used
 FLASH_COUNT = $05           ; Can be re-used after flash_led_error subroutine
 FLASH_LED_PATTERN = $06     ; Can be re-used after flash_led_error subroutine
 RAM_TEST_TEMP = $07         ; Can be re-used after RAM test/error subroutines
+COPY_6504_SRC = $08         ; $09 also required
+COPY_6504_DEST = $0A        ; $0B also required
+STATUS_6504_CHECK = $0C
+BLINK_TEMP = $0D            ; Used by blink subroutine
+BLINK_TEMP2 = $0E            ; Used by blink subroutine
 
 ; RIOT chip addresses
 RIOT_UE1_PBD = $0282
@@ -37,6 +42,7 @@ DR1_LED = $08
 ALL_LEDS = ERR_LED | DR0_LED | DR1_LED
 ERR_AND_0_LED = ERR_LED | DR0_LED
 ERR_AND_1_LED = ERR_LED | DR1_LED
+DR01_LEDS = DR0_LED | DR1_LED
 
 ; Macros
 
@@ -120,6 +126,54 @@ setup_stack:
 ; This is also our $D000 ROM entry point, JMPed to by $D005.
 d000_rom_start:
     JSR between_tests
+
+; Attempt to pause the 6504 processor.
+;
+; This is done by copying a routine to the 6504 processor to pause, until we
+; tell it to restart (reset).  This is done via the shared RAM.  We haven't
+; actually tested the static RAM (which is the shared RAM) yet, so we can't
+; guarantee this will work.  Nor can be guarantee that the 6504 is running
+; and operating correctly.  However, it is not very safe to do the static RAM
+; test without the 6504 being paused, as it will be trying to access the
+; static RAM at the same time.
+;
+; It is possible that something bad happens to our processor as part of this
+; routine.  Hence we use the first bank of static RAM to copy the routine,
+; using job 0 (so $1100-$11FF).  This is the first bank of shared RAM, which is
+; the first bank of static RAM we'll be testing shortly.  Hence, if we crash,
+; we would almost certainly have crashed immediately afterwards anyway.  So
+; this is not a particularly bad thing to do.
+disable_6504:
+    ; First of all, blink both DR1 and DR0 LEDs twice times in quick succession
+    ; to indicate that we are about to pause the 6504.
+    LDX #$40            ; Set X to 0.25 second delay
+    LDY #$40            ; Set Y to 0.25 second delay
+    LDA #DR01_LEDS      ; Set LED pattern to DR0 and DR1 LEDs
+    JSR blink           ; Blink twice
+    JSR blink
+
+    ; Now pause it
+    JSR pause_6504
+
+    ; Set up delays again - we'll use same delays whether success or failure
+    LDX #$40            ; Set X to 0.25 second delay
+    LDY #$40            ; Set Y to 0.25 second delay
+
+    ; Check if the 6504 has paused - pause returns A = $00 if it has, $01 if
+    ; it hasn't.
+    CMP #$00
+    BEQ @6504_paused
+
+    ; Didn't pause - blink all LEDs quickly twice to indicate error with 6504
+    LDA #ALL_LEDS       ; Set LED pattern to all LEDs
+    JMP @final_blinks   ; Do the blinks
+@6504_paused:
+    ; Blink both DR1 and DR0 LEDs twice times in quick succession again to
+    ; indicate that we paused the 6504 successfully.
+    LDA #DR01_LEDS      ; Set LED pattern to DR0 and DR1 LEDs
+@final_blinks:
+    JSR blink           ; Blink twice
+    JSR blink
 
 ; Run the RAM test
 ;
@@ -401,20 +455,38 @@ flash_led_error:
 ; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
 ; mark the transition from one test to the next.
 between_tests:
-    ; All off for 1s 
-    LDX #$00
+    LDX #$00            ; Off for 1s 
+    LDY #$40            ; On for 0.25s
+    LDA #ALL_LEDS       ; Set LED pattern to all LEDs
+    JSR blink           ; Blink
+    RTS                 ; Done
+
+; Blink all LEDs.
+;
+; Input: X - length of delay before and after blink in 1/256th second units
+;        Y - length of delay while LEDs on in 1/256th second units
+;        A - LED pattern to blink
+;
+; A, X and Y are restored before returning.
+blink:
+    STX BLINK_TEMP      ; Store X in BLINK_TEMP
+    STY BLINK_TEMP2      ; Store Y in BLINK_TEMP2
+
+    LDX #$00            ; Set LEDs off
     STX RIOT_UE1_PBD
+    LDX BLINK_TEMP      ; Pause
     JSR delay
-    ; All on for 0.25s
-    LDX #$40
-    LDA #ALL_LEDS
-    STA RIOT_UE1_PBD
+
+    STA RIOT_UE1_PBD    ; Turn LEDs on using pattern in A
+    LDX BLINK_TEMP2     ; Pause for on time
     JSR delay
-    ; All off for 1s 
-    LDX #$00
+
+    LDX #$00            ; Set LEDs off
     STX RIOT_UE1_PBD
+    LDX BLINK_TEMP      ; Pause (also returns X to original value)
     JSR delay
-    ; Done
+
+    LDY BLINK_TEMP2     ; Restore Y
     RTS
 
 ; Configurable delay routine.
@@ -448,6 +520,123 @@ delay:
 ; Our no-op interrupt handler
 empty_handler:
     RTI
+
+STATUS_6504 = $13FD
+CMD_6504_1 = $13FE
+CMD_6504_2 = $13FF
+
+CMD_RESET_1 = $FF
+CMD_RESET_2 = $FF
+
+JOB_0_SLOT = $1003
+JOB_EXEC = $60
+
+STATUS_6504_RUNNING = $01
+STATUS_6504_RESETTING = $02
+
+; Attempts to pause the 6504 processor.
+;
+; No inputs
+;
+; Will overwrite X and Y
+;
+; Returns with A = $00 if the 6504 has paused, $01 if it has not responded
+pause_6504:
+    LDX #$00                    ; Set X to 0
+    STX STATUS_6504             ; Set the status to 0
+    JSR copy_6504_cmd           ; Copy the 6504 command to the shared RAM
+    JSR exec_6504_job           ; Execute the 6504 job
+    LDX #STATUS_6504_RUNNING    ; Wait for the 6504 to start running our job
+    JSR wait_6504_status
+    RTS
+
+; Copy the 6504 cmd to the shared RAM, at $1100, which is job 0.
+;
+; Note that the max length of a code block is 256 bytes.
+;
+; Will overwrite A, X and Y
+copy_6504_cmd:
+    ; Get source address for 6504 code we want to copy
+    LDA CODE_6504_CMD_PTR   ; Get low byte of source address
+    STA COPY_6504_SRC       ; Store in source address
+    LDA CODE_6504_CMD_PTR+1 ; Get high byte of source address
+    STA COPY_6504_SRC+1     ; Store in source address
+
+    ; Set up destination addresses for 6504 code we want to copy
+    LDA #$00                ; Set destination to $1100
+    STA COPY_6504_DEST      ; Store in destination address
+    LDA #$11
+    STA COPY_6504_DEST+1    ; Store in destination address
+
+    ; Do the copy, byte by byte.
+    LDY #$00                ; Set Y to 0 as an index for the copy
+    LDX CODE_6504_CMD_LEN   ; Get the length of the command
+    BEQ @copy_done          ; If length is 0, we're done
+@copy_loop:
+    LDA (COPY_6504_SRC),Y   ; Load the byte from the source address
+    STA (COPY_6504_DEST),Y  ; Store it in the destination address
+    INY                     ; Increment Y
+    BNE @not_wrap           ; Check if we crossed a page
+    INC COPY_6504_SRC+1     ; If so, increment high bytes
+    INC COPY_6504_DEST+1
+@not_wrap:
+    DEX                     ; Decrement counter
+    BNE @copy_loop          ; Continue until all bytes copied
+@copy_done:
+    RTS                     ; Return from subroutine 
+
+; Wait up to ~1s for the 6504 to report a certain status
+;
+; X contains status byte to wait for
+;
+; Overwrites X
+;
+; Returns with A = $00 if the 6504 reached the state, $01 if it is not.
+wait_6504_status:
+    STX STATUS_6504_CHECK       ; Store the status byte to check for
+    LDY #$00                    ; Set Y to 0 (256) for total number of times to
+                                ; check
+@check:
+    DEY                         ; Decrement Y
+    BEQ @failure                ; If Y reached 0, 6504 didn't start reach
+                                ; desired state
+    LDA STATUS_6504             ; Read the status byte
+    CMP STATUS_6504_CHECK       ; Check if the 6504 is in desired state
+    BEQ @success
+    ; It didn't - pause for ~1/256th second
+    LDX #$01                    ; Set delay to 1/256th second
+    JSR delay                   ; Call delay routine
+    JMP @check                  ; Loop back to check again
+@success:
+    LDA #$00                    ; Success
+    RTS                         ; Return
+@failure:
+    LDA #$01                    ; Failure
+    RTS                         ; Return
+
+; Starts the 6504 job to execute code, using job 0, and assumes code is already
+; loaded to appropriate address, 6502:$1100, 6504:$500.
+;
+; Overwrites A.
+exec_6504_job:
+    LDA #(JOB_EXEC | $80)       ; Set up the command to start the job, of type
+                                ; execute, with MSB set
+    STA JOB_0_SLOT              ; Store in job slot 0
+    RTS                         ; Return
+
+.ifdef F000_BUILD
+  CODE_6504_START = $FF00
+.else
+  CODE_6504_START = $DF00
+.endif
+CODE_6504_CMD_PTR = CODE_6504_START + 0
+CODE_6504_CMD_LEN = CODE_6504_START + 2
+
+; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
+; to copy the routine(s) we want from this binary to the shared RAM and then
+; have the 6504 execute it.
+.segment "CODE_6504"
+.incbin "diag_x040_6504.bin"
 
 ; If we're installed as the $F000 ROM, we need to provide a jump vector to
 ; START.
