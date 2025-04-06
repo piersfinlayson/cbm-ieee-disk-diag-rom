@@ -9,11 +9,11 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 ## ✨Features
 
 - ✅ Zero page and static RAM testing
+- 🔍 Identifies precisely which SRAM chip which failed
 - 💡 Visual status indication and failed components via drive LEDs
-- 🧪 Simple diagnostic functionality
 - 📦 Compatible with multiple disk drive models
 - 🔄 Can be installed at either $F000 or $D000 (DOS 1 only) ROM locations
-- 🔍 Detects and reports the configured hardware device ID (8, 9, etc)
+- 🏷️ Detects and reports the configured hardware device ID (8, 9, etc)
 
 ## 📥Installation
 
@@ -72,7 +72,7 @@ The ROM uses the drive's LEDs to indicate status:
 | ERR LED off, DR0/DR1 flashing | Al tests passed (**) |
 | ERR LED and drive 0 LEDs flashing together | Zero page test failed in UC1 6532 |
 | ERR LED and drive 1 LEDs flashing together | Zero page test failed in UE1 6532 (+) |
-| ERR LED solid, DR1 light flashing, all lights go off, then restarts | Static RAM check failed (++) |
+| ERR LED solid, DR1 light flashing, D0 flashing, all lights go off, then flashing restarts | Static RAM check failed (++) |
 
 (*) Most likely 6502 is faulty, this ROM is corrupted, or UE1 6532 is faulty.  First try replacing the 6502 and the UE1 6532.  If the problem remains, you probably have some issue with either
 - the main RESET circuit
@@ -84,11 +84,15 @@ The ROM uses the drive's LEDs to indicate status:
 
 (+) As UE1 is used to drive LEDs, this error may not be signaled via LEDs.
 
-(++) Number of flashes before pause indicates which static RAM chip has failed:
+(++) Number of Drive 1 flashes indicates which static RAM bank has failed:
 - 1 flash = UC4 or UC5 (or one of the 74L157s UC3/UD3/UE3/UF3 may have failed)
 - 2 flashes = UD4 or UD5
 - 3 flashes = UE4 or UE5
 - 4 flashes = UF4 or UF5
+
+(++) Number of Drive 0 flashes indicates which nibble has failed:
+- 1 flash = low nibble = U_4
+- 2 flashes = high nibble = U_5
 
 ## 🔨Building From Source
 
@@ -135,7 +139,6 @@ It appears, from the fact that the stock DOS 1 ROMs support a $D000 diagnostics 
 ### 📚 Fun Fact 2 - Upgrading 2040 to DOS 2
 
 In "Programming the PET/CBM", author Raeto states that the 2040 is difficult to upgrade as the PCB needs to be changed - the implication being to upgrade the ROMs.  I've not seen evidence of this - my 2040 and 3040 DOS 1 drives are very similar (the only hardware difference appears to be the addition of a double NOT gate on some of the clock lines presumably to clear up the signal), so I believe it would be perfectly possible to upgrade my 2040 to DOS 2 just by upgrading the ROMs.  It is possible there were earlier 2040s with a different PCB, although mine dates from 1978-9.
-
 
 ## 📜License
 
