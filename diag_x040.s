@@ -130,9 +130,10 @@ ram_test:
 @led_pattern:
     ; This creates a pattern with the LEDs to indicate which page is being
     ; tested.  DR1 LED is on for $1xxx.  DR0 LED is on for $2xxx.  DR1 and
-    ; DR2 are on for $3xxx. The ERR LED is on for $4xxx.
-    ; high byte location is $x0, and the lower most LED bit is PB3, we need to
-    ; shift the high byte right by 1 bit after getting rid of the low nibble.
+    ; DR0 are on for $3xxx. The ERR LED is on for $4xxx.
+    ; As the high byte location is in the top most nibble $x0, and the lower
+    ; most LED bit (DR1) is PB3, we need to shift the high byte right by 1 bit
+    ; after getting rid of the low nibble.
     TXA                 ; Load page number
     AND #$70            ; Isolate the bits we're interested in
     LSR A               ; Shift right by 1 bit to get the value to write to
