@@ -116,7 +116,7 @@ setup_stack:
     LDX #$FF    ; Set up stack pointer
     TXS         ; Set up stack pointer to $1FF
 
-; Betwen tests - had to wait til stack was setup before calling
+; Between tests - had to wait til stack was setup before calling
 d000_rom_start:
     JSR between_tests
 
