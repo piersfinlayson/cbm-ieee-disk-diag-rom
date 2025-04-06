@@ -24,7 +24,7 @@ DELAY_TEMP_X = $03          ; Can be re-used when delay subroutine not used
 DELAY_TEMP_Y = $04          ; Can be re-used when delay subroutine not used
 FLASH_COUNT = $05           ; Can be re-used after flash_led_error subroutine
 FLASH_LED_PATTERN = $06     ; Can be re-used after flash_led_error subroutine
-RAM_ERROR_NIBBLE = $07      ; Can be re-used after RAM test/error subroutines
+RAM_TEST_TEMP = $07         ; Can be re-used after RAM test/error subroutines
 
 ; RIOT chip addresses
 RIOT_UE1_PBD = $0282
@@ -244,29 +244,27 @@ ram_byte_test:
 ; Check lower nibble
     LDA (TEST_PTR),Y        ; Read back the byte from RAM
     AND #$0F                ; Isolate the lower nibble
-    STA RAM_ERROR_NIBBLE    ; Store the actual lower nibble in RAM_TEST_TEMP
+    STA RAM_TEST_TEMP       ; Store the actual lower nibble in RAM_TEST_TEMP
     TXA                     ; Load A with the expected value
     AND #$0F                ; Isolate the lower nibble
-    CMP RAM_ERROR_NIBBLE    ; Compare with the actual value
+    CMP RAM_TEST_TEMP       ; Compare with the actual value
     BEQ @check_upper        ; Lower nibble good - check upper nibble
     ; Lower nibble was wrong
-    LDA #$02                ; Set the error nibble value to 2 to indicate the
+    LDA #$01                ; Set the error nibble value to 2 to indicate the
                             ; lower nibble test failed
-    STA RAM_ERROR_NIBBLE    ; Store the error nibble in RAM_ERROR_NIBBLE
     JMP @error              ; Jump to error handler
 @check_upper:
     ; Check upper nibble
     LDA (TEST_PTR),Y        ; Read back the byte from RAM (again)
     AND #$F0                ; Isolate the upper nibble
-    STA RAM_ERROR_NIBBLE    ; Store the actual upper nibble in RAM_TEST_TEMP
+    STA RAM_TEST_TEMP       ; Store the actual upper nibble in RAM_TEST_TEMP
     TXA                     ; Load A with the expected value
     AND #$F0                ; Isolate the upper nibble
-    CMP RAM_ERROR_NIBBLE    ; Compare with the actual value
+    CMP RAM_TEST_TEMP       ; Compare with the actual value
     BEQ @return             ; If equal, test succeeded, so return
     ; Upper nibble was wrong
-    LDA #$01                ; Set the error nibble value to 1 to indicate the
+    LDA #$02                ; Set the error nibble value to 1 to indicate the
                             ; upper nibble test failed
-    STA RAM_ERROR_NIBBLE    ; Store the error nibble in RAM_ERROR_NIBBLE
 @error:
     JSR ram_error           ; If not zero, test failed, so report error
 @return:
@@ -335,12 +333,12 @@ zp_error:
 ; X being in the range 0-3 inclusive.  We will shift this byte right 4 times
 ; to get the failed bank number (1-4), handily removing the lower nibble.
 ;
-; RAM_ERROR_NIBBLE contains $01 for the upper nibble failing, $02 for the
-; lower nibble.  Hence by shifting this left 3 times we get $08 or $10, which
-; are the bit masks for DR1 (high) and DR0 (low) nibbles respectively.
+; Accumulator contains $02 for the upper nibble failing, $01 for the
+; lower nibble.  Hence by shifting this left 3 times we get $10 or $08, which
+; are the bit masks for DR0 (high) and DR1 (low) nibbles respectively.
 ram_error:
-    ; Figure out which DR LED to flash
-    LDA RAM_ERROR_NIBBLE    ; Load A with the error nibble
+    ; Figure out which DR LED to flash - accumulator contains $01 for lower
+    ; nibble test failed, $02 for upper nibble.
     ASL A                   ; Shift left 3 times to set the DR LED to light
     ASL A 
     ASL A

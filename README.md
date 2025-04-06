@@ -126,9 +126,9 @@ However, as UE1 is used to drive LEDs, if the entire chip has failed, this error
 
 In this scenario the ERR LED is lit while either the DR1 or DR0 LED flashes.  All LEDs go out after the flashing, and then the sequence starts again.
 
-DR0 flashing signifies a lower nibble RAM chip (UC4, UD4, UE4 or UF4) has failed.
+DR0 flashing signifies a high nibble RAM chip (UC4, UD4, UE4 or UF4) has failed.
 
-DR1 flashing signifies a upper nibble RAM chip (UC5, UD5, UE5, UF5) has failed.
+DR1 flashing signifies a low nibble RAM chip (UC5, UD5, UE5, UF5) has failed.
 
 The Number of Drive LED flashes indicates which bank has failed:
 - 1 flash = UC4 or UC5
