@@ -9,7 +9,7 @@
 ; Version numbers
 MAJOR_VERSION = $00
 MINOR_VERSION = $01
-PATCH_VERSION = $01
+PATCH_VERSION = $02
 RESERVED = $00
 
 ; Constants
