@@ -30,9 +30,10 @@ STATUS_RESETTING = $02
 .segment "CODE"
 start:
     ; Start off with a table of routine pointers and lengths.  The 6502 code
-    ; will use this table to figure out how to copy the routine to the shared
+    ; will use this table to figure out how to copy the routine to shared 
     ; RAM.
     .addr cmd - start   ; Address of command routine
+    .assert (cmd_end - cmd) <= 255, error, "Routine too large for byte: cmd"
     .byte cmd_end - cmd ; Length of command routine
 
 cmd:
