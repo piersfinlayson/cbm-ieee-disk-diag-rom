@@ -105,7 +105,7 @@ zp_test:
     BNE @test       ; Loop until all zero page locations are verified
     JMP @done       ; We're done
 @error:
-    CPX $80         ; Test if the upper zero page (UE1 failed)
+    CPX #$80         ; Test if the upper zero page (UE1 failed)
     BCS zp_error    ; It did, jump to final error handler - we won't do any
                     ; further testing, as a broken UE1 is fatal.
 
