@@ -880,16 +880,16 @@ takeover_6504:
 copy_6504_cmd:
     ; Read the offset from the binary header
     LDA CODE_6504_START     ; Get low byte of offset
-    STA CP_TEMP             ; Store in temp pointer
+    STA CP_TEMP1            ; Store in temp pointer
     LDA CODE_6504_START+1   ; Get high byte of offset
-    STA CP_TEMP+1           ; Store in temp pointer
+    STA CP_TEMP2            ; Store in temp pointer
 
     ; Calculate actual source address (CODE_6504_START + offset)
     CLC                     ; Clear carry before addition
-    LDA CP_TEMP             ; Load the low byte of the offset value
+    LDA CP_TEMP1            ; Load the low byte of the offset value
     ADC #<CODE_6504_START   ; Add the low byte of CODE_6504_START
     STA CP1                 ; Store result as low byte of source pointer
-    LDA CP_TEMP+1           ; Load the high byte of the offset
+    LDA CP_TEMP2            ; Load the high byte of the offset
     ADC #>CODE_6504_START   ; Add the high byte of CODE_6504_START ($FF or
                             ; $DF) plus any carry
     STA CP1+1               ; Store result as high byte of source pointer

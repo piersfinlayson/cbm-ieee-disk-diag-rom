@@ -57,7 +57,8 @@ RP2 = TEMP_PTR2         ; test_ram_byte(_pattern) - pointer to byte under test
 CWS = TEMP_A            ; wait_6504_status - status to wait for
 CP1 = TEMP_PTR1         ; copy_6504_cmd - pointer to code source
 CP2 = TEMP_PTR2         ; copy_6504_cmd - pointer to code destination
-CP_TEMP = TEMP_Y        ; copy_6504_cmd - and TEMP_Z
+CP_TEMP1 = TEMP_Y        ; copy_6504_cmd
+CP_TEMP2 = TEMP_Z        ; copy_6504_cmd
 
 ; Used by notification routines
 NFTC = TEMP_A           ; flash_led_error - notification flash target count
