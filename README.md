@@ -37,8 +37,8 @@ Either [Build From Source](#building-from-source) or download the ROMs from the 
    - Use `diag_x040_d000.bin` for installation at $D000
 
 2. 🔌 Install the EPROM in the appropriate socket in your disk drive
-   - $F000 - UH1
-   - $D000 - UJ1
+   - $F000 - [UH1](#schematics-and-pcb-layouts)
+   - $D000 - [UJ1](#schematics-and-pcb-layouts)
 
 See [📐Schematics and PCB Layouts](#schematics-and-pcb-layouts) for the location of the components.
 
@@ -89,15 +89,15 @@ After boot and during this phase, the ERR LED is not used.  The other LEDs show 
 | All LEDs including ERR on | [Device coming out of reset](#device-coming-out-of-reset) |
 | All LEDs remain on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) | 
 | ERR LED goes out, followed by DR0/DR1 lights | [Testing zero page](#testing-zero-page) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#moving-to-next-test) |
+| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | No visual indication | [Retrieving device ID](#retrieving-device-id) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#moving-to-next-test) |
+| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #1](#static-ram-test) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#moving-to-next-test) |
-| DR0/DR1 both blink twice quickly | [Attempted to pause 6504](#pausing-the-6504) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#moving-to-next-test) |
+| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| DR0/DR1 both blink twice quickly | [Attempted to pause 6504](#️pausing-the-6504) |
+| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #2](#static-ram-test) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#moving-to-next-test) |
+| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 
 ### Reporting Results
 
@@ -114,9 +114,9 @@ Reporting uses the following patterns:
 | LED Pattern | Meaning |
 |-------------|---------|
 | ERR and DR1 LEDs blinking fast | [UE1 zero page test failed](#ue1-zero-page-test-failed) |
-| ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#static-ram-check-failed) |
-| ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#uc1-zero-page-test-failed) |
-| ERR on, 6 flashes on both DR1 and DR0 | [Failed to pause 6504](#failed-to-pause-6504) |
+| ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#️static-ram-check-failed) |
+| ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#️uc1-zero-page-test-failed) |
+| ERR on, 6 flashes on both DR1 and DR0 | [Failed to pause 6504](#️failed-to-pause-6504) |
 | ERR LED off, DR0/DR1 flashing | [Reporting Device ID](#reporting-device-id) |
 
 ## 📋Detailed Test Information
@@ -214,7 +214,7 @@ If you see failures across all of your chips, it may instead be one or more fail
 
 If this fails, it signifies either a 6504 failure, or possibly another component on the 6504 address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.
 
-It may also be a problem with the shared data bus.  As the data bus is shared between both 6504 and 6502 controls, be suspicious of a shared bug problem if, as well as a 6504 failure you, also get a [static RAM failure](#testing-static-ram).
+It may also be a problem with the shared data bus.  As the data bus is shared between both 6504 and 6502 controls, be suspicious of a shared bug problem if, as well as a 6504 failure, you also get a [static RAM failure](#️static-ram-check-failed).
 
 ### 🆔Reporting Device ID
 
