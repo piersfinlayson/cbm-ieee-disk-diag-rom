@@ -33,4 +33,5 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            *.bin
+            diag_x040_f000.bin
+            diag_x040_d000.bin
