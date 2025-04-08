@@ -25,6 +25,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - [🔨Building From Source](#building-from-source)
 - [🤓Fun Facts](#fun-facts)
 - [📐Schematics and PCB Layouts](#schematics-and-pcb-layouts)
+- [🚧Future Enhancements](#future-enhancements)
 - [📜License](#license)
 - [🤝Contributing](#contributing)
 
@@ -275,6 +276,20 @@ See [zimmers.net](http://www.zimmers.net/anonftp/pub/cbm/schematics/drives/old/i
 The 4040 PCB layout is reproduced here to aid with identifying the components this README references:
 
 ![4040 PCB Layout](./images/4040_layout.png "4040 PCB Layout")
+
+## 🚧Future Enhancements
+
+This section lists some potential future enhancements:
+
+📡 Ability to send diagnostics information via IEEE-488 port.  Could potentially support two modes:
+- If only UE1 present and working, implement a serial protocol over the IEEE-488 lines available on the UE1.
+- If both UE1 and UC1 present and working, communicate using IEEE-488 stock protocol.  
+
+🧠 Additional 6504 and supporting component tests.
+
+💽 Test drive mechanisms, which are driven via the 6504.
+
+📈 Support other drives, including 8050 and 8250.
 
 ## 📜License
 
