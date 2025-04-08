@@ -188,11 +188,19 @@ This produces two ROM images:
 - 🔍 Provides visual indication of failed memory test, allowing you to indentify and replace the failed chip
 - 💡 Reads the device ID from UE1 PB0-PB2 and indicates it by flashing the LEDs that number of times
 
-### 🔎 Fun Fact 1 - Official Commodore Diagnostic ROM 
+### 🏗️ Build Process
+
+The build process is two stage:
+- First, the code which will be copied to the disk drive's 6504, and which this ROM will cause to be executed, is compiled and linked.
+- Second, the two variants of this ROM (one to be loaded at $F000, the other to be installed alongside the stock ROMs a $D000) are compiled.  At this point, the 6504 code binary is included.  These two ROM variants are then linked producing the binaries.
+
+An optional script [`flash_fill_1mbit.sh`](flash_fill_1mbit.sh) can then be run to copy one of the produced ROMs ($F000 or $D000) to be copied multiple times to be a single 1Mbit file.  This can then be used to fill a 1 Mbit PROM.  If you have a different sized PROM, you can modify the script to product an appropriate sized file.
+
+### 🦄 Fun Fact 1 - Official Commodore Diagnostic ROM 
 
 It appears, from the fact that the stock DOS 1 ROMs support a $D000 diagnostics ROM, that there was an official Commodore diagnostics ROM which could be installed alongside the main DOS 1 ROMs to aid with problem diagnosis.  I've not been able to find a copy of that ROM, hence building my own to help me fix 2040, 3040 and 4040 drives.
 
-### 📚 Fun Fact 2 - Upgrading 2040 to DOS 2
+### 🤔 Fun Fact 2 - Upgrading 2040 to DOS 2
 
 In "Programming the PET/CBM", author Raeto states that the 2040 is difficult to upgrade as the PCB needs to be changed - the implication being to upgrade the ROMs.  I've not seen evidence of this - my 2040 and 3040 DOS 1 drives are very similar (the only hardware difference appears to be the addition of a double NOT gate on some of the clock lines presumably to clear up the signal), so I believe it would be perfectly possible to upgrade my 2040 to DOS 2 just by upgrading the ROMs.  It is possible there were earlier 2040s with a different PCB, although mine dates from 1978-9.
 
