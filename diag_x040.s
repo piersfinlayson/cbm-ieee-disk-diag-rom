@@ -682,12 +682,12 @@ control_6504:
 
     ; Check if the 6504 has paused - takeover returns A = $00 if it has, $01 if
     ; it hasn't.  The last thing takeover_6504 does is LDA with the value, so
-    ; we don't need to test it - test the Z flag directly  instead.
+    ; we don't need to test it - test the Z flag directly instead.
     BEQ @done
 
 ; Didn't succeed in taking over 6504 - so update the result bit (which should
 ; be zero due to zero page test leaving zero page zeroed out)
-    ORA RESULT_6504     ; Mark takeover as ailed
+    ORA RESULT_6504     ; Mark takeover as failed
     STA RESULT_6504
 
 @done:
@@ -879,27 +879,27 @@ takeover_6504:
 ; Will overwrite A, X and Y
 copy_6504_cmd:
     ; Get source address for 6504 code we want to copy
-    LDA CODE_6504_CMD_PTR   ; Get low byte of source address
-    STA CP1           ; Store in source address
-    LDA CODE_6504_CMD_PTR+1 ; Get high byte of source address
-    STA CP1+1         ; Store in source address
+    LDA #<CODE_6504_CMD_PTR ; Get low byte of source address
+    STA CP1                 ; Store in source address
+    LDA #>CODE_6504_CMD_PTR ; Get high byte of source address
+    STA CP1+1               ; Store in source address
 
     ; Set up destination addresses for 6504 code we want to copy
     LDA #$00                ; Set destination to $1100
-    STA CP2           ; Store in destination address
+    STA CP2                 ; Store in destination address
     LDA #$11
-    STA CP2           ; Store in destination address
+    STA CP2+1               ; Store in destination address
 
     ; Do the copy, byte by byte.
     LDY #$00                ; Set Y to 0 as an index for the copy
     LDX CODE_6504_CMD_LEN   ; Get the length of the command
     BEQ @copy_done          ; If length is 0, we're done
 @copy_loop:
-    LDA (CP1),Y       ; Load the byte from the source address
-    STA (CP2),Y       ; Store it in the destination address
+    LDA (CP1),Y             ; Load the byte from the source address
+    STA (CP2),Y             ; Store it in the destination address
     INY                     ; Increment Y
     BNE @not_wrap           ; Check if we crossed a page
-    INC CP1+1         ; If so, increment high bytes
+    INC CP1+1               ; If so, increment high bytes
     INC CP2+1
 @not_wrap:
     DEX                     ; Decrement counter
@@ -911,7 +911,7 @@ copy_6504_cmd:
 ;
 ; X contains status byte to wait for
 ;
-; Overwrites X
+; Overwrites X and Y
 ;
 ; Returns with A = $00 if the 6504 reached the state, $01 if it is not.
 ; This also sets the Z flag in the success case.
@@ -919,7 +919,7 @@ wait_6504_status:
     STX CWS             ; Store the status byte to check for
     LDY #$00            ; Set Y to 0 (256) for total number of times to check
 @check:
-    DEY                         ; Decrement Y
+    DEY                 ; Decrement Y
     BEQ @failure        ; If Y reached 0, 6504 didn't start reach desired state
     LDA STATUS_6504     ; Read the status byte
     CMP CWS             ; Check if the 6504 is in desired state
