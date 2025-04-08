@@ -56,7 +56,7 @@ RamTest2:
 
 ; Map low nibble of page number to LEDs to light
 RamTestLedPattern:
-    .byte $00, DR1_LED, ERR_AND_1_LED, ALL_LEDS
+    .byte DR0_LED, DR1_LED, DR0_LED, DR1_LED
 
 ; Byte patterns used to test RAM.  Finish with 0 to leave the RAM in that
 ; state.
@@ -67,9 +67,10 @@ RamTestBytePattern:
 start:
     CLD             ; Clear decimal mode
     SEI             ; Disable interrupts
-    LDA #ERR_LED    ; Turn on ERR LED.  We deliberately only turn on the ERR
-                    ; LED, as all three LEDs are lit before we do this - it
-                    ; shows we are alive
+    LDA #DR01_LEDS  ; Turn on DR0 and DR1 LEDs for the zero page test.
+                    ; We deliberately don't turn on the ERR LED, as there is
+                    ; no error to report yet, and so this differentiates
+                    ; between the CPU not booted (all LEDs lit) and now 
     STA RIOT_UE1_PBD
     LDA #ALL_LEDS   ; Set LED pins to outputs
     STA RIOT_UE1_PBDD
@@ -83,14 +84,15 @@ start:
 ;
 ; If this routine complete successfully, it has zeroed the entire zero page.
 zp_test:
-    LDX #$00        ; Initialize X to 0 (start point for zero page RAM test)
+    LDX #$00        ; Initialize X to $00 (will wrap, so we start at $FF)
     LDY #$55        ; Load Y with $55 (01010101 - test pattern)
 @fill:
+    DEX             ; Decrement X (note: wraps from 0 to 255 first time)
     STY ZP,X        ; Store test pattern in zero page location X
-    DEX             ; Decrement X (note: wraps from 0 to 255)
     BNE @fill       ; Loop until all zero page locations are filled with test
                     ; pattern
 @test:
+    DEX             ; Decrement X (note: wraps from 0 to 255 first time)
     LDA #$AA        ; Load A with $AA (10101010 - complement of test pattern)
     ASL ZP,X        ; Shift left memory at ZP+X (turns $55 into $AA)
     EOR ZP,X        ; XOR with memory (should be 0 if memory working)
@@ -99,18 +101,26 @@ zp_test:
                     ; handler
     LDA #$00        ; Initialize tested location to 0
     STA ZP,X
-    DEX             ; Decrement X
+    CPX #$00        ; Check if we've done all zero page locations
     BNE @test       ; Loop until all zero page locations are verified
+    JMP @done       ; We're done
+@error:
+    CPX $80         ; Test if the upper zero page (UE1 failed)
+    BCS zp_error    ; It did, jump to final error handler - we won't do any
+                    ; further testing, as a broken UE1 is fatal.
+
+    ; No, failure was in UC1.  This means the UE1 zero page is OK - as we
+    ; test that first.  Hence we can set the result, and then move on to the
+    ; next test.
+    LDX #ZP_UC1     ; Set the ZP result
+    STX RESULT_ZP
+@done:
     LDA #TEST_ZP    ; Mark this test has having been performed
     STA TESTS_6502  ; Store result in zero page
-    JMP setup_stack ; All zero page locations are verified, so jump to
-                    ; setup_stack
-@error:
-    JMP zp_error    ; Jump to zero page error handler
 
 ; Setup the stack, which shadows the zero page - hence there's no need to
 ; test the stack memory.  We do this after testing the zero page.
-setup_stack:
+setup_stack:    
     LDX #STACK_PTR
     TXS
 
@@ -134,6 +144,7 @@ with_stack_main:
     LDY #>RamTest1          ; Load high byte of test table address
     JSR test_ram_table      ; Call routine to test the RAM
     LDA #TEST_RAM1          ; Mark this test as having been performed
+    ORA TESTS_6502
     STA TESTS_6502          ; Store result in zero page
     JSR check_ram_result    ; Check we can continue
 
@@ -151,6 +162,7 @@ with_stack_main:
     LDY #>RamTest2          ; Load high byte of test table address
     JSR test_ram_table      ; Call routine to test the RAM
     LDA #TEST_RAM2          ; Mark this test as having been performed
+    ORA TESTS_6502
     STA TESTS_6502          ; Store result in zero page
     JSR check_ram_result    ; Check we can continue
 
@@ -170,9 +182,59 @@ get_device_id:
     AND #$07            ; Just select the 3 least significant bits
     ORA #$08            ; Add 8 to get the device ID.
     STA DEVICE_ID       ; Store the device ID in zero page
-    LDA #TEST_DI         ; Mark this test as having been performed
+    LDA #TEST_DEV_ID    ; Mark this test as having been performed
+    ORA TESTS_6502
     STA TESTS_6502      ; Store result in zero page
     RTS
+
+; Zero page test failed.  Flash all ERR LED and specific drive LED, with 0.5s
+; delay between flashes.  X indicates which byte failed.  We start at byte 0,
+; then go down (255, 254 ... 1).  So If UC1 is dead, that failure will be
+; detected first ($00), then UE1 ($FF).
+;
+; As we have no zero page, we also have no stack, so we have to inline
+; everything.
+zp_error:
+    LDA #ERR_AND_1_LED      ; Set ERR LED and DR1 LED on to show error in left
+                            ; hand 6532, UE1 - guess at this stage
+    CPX #128                ; Compare X with 128
+    BCS @toggle_leds        ; If X >= 128, jump to toggle_leds - as we were
+                            ; right about which 6532 has failed
+    LDA #(ERR_AND_0_LED)    ; Set ERR LED and DR0 LED on to show error in right
+                            ; hand 6532, UC1
+@toggle_leds:
+    EOR #$01    ; Toggle bit 0 of the LED pattern, which indicates whether the
+                ; LEDs should be on or off
+    ; Figure out if we should turn the LEDs on or off
+    TAY                 ; Save full value in Y
+    AND #$01            ; Isolate bit 0
+    BEQ @leds_off       ; If bit 0 is 0, LEDs should be off
+    ; Turn LEDs on
+    TYA                 ; Restore our LED pattern
+    AND #ALL_LEDS       ; Isolate the LED bits - remove bit 0 before writing
+                        ; to the register
+    STA RIOT_UE1_PBD    ; Store to LED register
+    EOR #$01            ; Now restore bit 0
+    JMP @delay          ; Continue to delay
+@leds_off:
+    LDA #$00            ; Turn all LEDs off
+    STA RIOT_UE1_PBD    ; Store to LED register
+    TYA                 ; Restore our LED pattern, with bit 0 unset
+@delay:
+    LDX #$80    ; Set X to 128 (~0.5s delay)
+@x_loop:
+    LDY #$00    ; Y will count from 0 (256 iterations)
+@y_loop:
+    NOP         ; 2 cycles
+    NOP         ; 2 cycles 
+    NOP         ; 2 cycles
+    NOP         ; 2 cycles
+    NOP         ; 2 cycles
+    DEY         ; 2 cycles - if Y is 0, it will wrap to 255 before the branch
+    BNE @y_loop ; 3/2 cycles
+    DEX         ; 2 cycles - if X is 0, it will wrap to 255 before the branch
+    BNE @x_loop ; 3/2 cycles
+    JMP @toggle_leds    ; We're done - jump back to toggle LEDs
 
 ; Our diagnostics routine is now done, so we go through and report:
 ; - any errors
@@ -180,21 +242,32 @@ get_device_id:
 ;
 ; We do this in a loop, forever.
 finished:
-    LDA TESTS_6502      ; Load the tests performed, so we can run through them
-                        ; providing any required notifications
+    JSR report_zp       ; Report zero page errors, if any
+    JSR report_ram      ; Report RAM errors, if any
+    JSR report_6504     ; Report 6504 errors, if any
+    JSR report_dev_id   ; Report the device ID, if we have it
 
-    .assert TEST_ZP = $01, error, "TEST_ZP is not first bit"
-    LSR A               ; Shift right to see if zero page tested.  It must be 
-                        ; if we're here, so ignore result.
-    STA NT6502          ; Store off test result variable
+    ; Finally, pause for 1 second before restarting
+    LDX #$00            ; Set delay to 1 second
+    JSR delay           ; Call delay routine
+    JMP finished        ; Restart sequence
 
-; Handle ZP error notifications
+; Report any zero page error(s)
+;
+; Uses RESULT_ZP (set by the zero page test)
+;
+; Destroys A, X and Y
+report_zp:
+    ; Don't bother checking whether we did the zero page test - we know we
+    ; did if we get here.
+
+    ; Handle ZP error notifications
     LDA RESULT_ZP       ; Load the result of the zero page test
     .assert ZP_UC1 = $01, error, "ZP_UC1 is not first bit"
     .assert ZP_UE1 = $02, error, "ZP_UE1 is not second bit"
     LSR A               ; Shift right to see if UC1 zero page test failed
     STA NRZP            ; Store off zp test result variable
-    BCC @zp_ue1_check   ; If not, skip to next ZP check
+    BCC @ue1_check      ; If not, skip to next ZP check
 
     ; UC1 zero page test failed - report it
     LDA #$05            ; Flash 5 times for zero page error
@@ -202,10 +275,10 @@ finished:
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error
 
-@zp_ue1_check:
+@ue1_check:
     LDA NRZP            ; Reload zp test result variable
     LSR A               ; Shift right to see if UE1 zero page test failed
-    BCC @ram_check      ; If not, skip to next check
+    BCC @done           ; If not, skip to next check
 
     ; UC1 zero page test failed - report it
     LDA #$05            ; Flash 5 times for zero page error
@@ -213,12 +286,18 @@ finished:
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error
 
-@ram_check:
-    .assert TEST_RAM1 = $02, error, "TEST_RAM1 is not second bit"
-    .assert TEST_RAM2 = $04, error, "TEST_RAM2 is not third bit"
-    LDA NT6502          ; Reload the temporary test result variable
-    ORA #(TEST_RAM1 | TEST_RAM2)    ; Check if either RAM test 1 or 2 failed
-    BEQ @6504_check     ; If not, skip to next check
+@done:
+    RTS
+
+; Report any RAM error(s)
+;
+; Uses RESULT_RAM_TEST (set by the RAM test)
+;
+; Destroys A, X and Y
+report_ram:
+    LDA TESTS_6502      ; Load the tests performed to A
+    ORA #(TEST_RAM1 | TEST_RAM2)    ; Check if either RAM test 1 or 2 took place
+    BEQ @done           ; If not, skip to next check
 
     ; One of the RAM tests failed - use RESULT_RAM_TEST to report failed chips
     LDA RESULT_RAM_TEST ; Load the result of the RAM test
@@ -264,25 +343,39 @@ finished:
     DEX                 ; Decrement chip counter
     BNE @check_chip     ; If not done, loop back to check next chip
 
-    LDA NT6502          ; Reload the temporary test result variable before the
-                        ; next check
-@6504_check:
-    LSR A               ; Shift right twice to get rid of RAM test results
-    LSR A
-    .assert TEST_6504_TO = $08, error, "TEST_6504_TO is not fourth bit"
-    LSR A               ; Shift right to see if 6504 test failed
-    BCC @dev_id_check   ; If not, skip to next check
+@done:
+    RTS
+
+; Report any 6504 error(s)
+;
+; Uses RESULT_6504 (set by the 6504 test)
+;
+; Destroys A, X and Y
+report_6504:
+    LDA TESTS_6502      ; Load the tests performed to A
+    ORA #TEST_6504_TO   ; Check if 6504 test was performed
+    BEQ @done           ; If not, skip to next check
+    
+    LDA RESULT_6504     ; Load the result of the 6504 test
+    LSR A               ; Shift right to see if the takeover failed
+    BCC @done   ; If not, skip to next check
 
     ; 6504 test failed - report it
-    STA NT6502          ; Store off test result variable
     LDA #$06            ; Flash 6 times for 6504 control takeover failure
     LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error
 
-    LDA #NT6502         ; Reload the temporary test result variable    
+@done:
+    RTS
+
+; Report the device ID
+;
+; Destroys A, X and Y
+report_dev_id:
+    LDA TESTS_6502      ; Load the tests performed to A
 @dev_id_check:
-    LSR A               ; Shift right to check we checked the device ID
+    ORA #TEST_DEV_ID    ; Check if device ID test was performed
     BCC @done           ; If not, skip to next check
 
     LDY DEVICE_ID       ; Initialize Y to the device ID
@@ -298,11 +391,7 @@ finished:
     BNE @dev_flash_loop ; Loop back to flash the LEDs again
 
 @done:
-    ; Finally, pause for 1 second before restarting
-    LDX #$00            ; Set delay to 1 second
-    JSR delay           ; Call delay routine
-    JMP finished        ; Restart sequence
-
+    RTS
 
 ; Routine to tests a table of RAM pages.
 ;
@@ -591,59 +680,11 @@ control_6504:
     JSR blink
 
     LDA #TEST_6504_TO   ; Mark this test as having been performed
+    ORA TESTS_6502
     STA TESTS_6502      ; Store result in zero page
 
     ; Done
     RTS
-
-; Zero page test failed.  Flash all ERR LED and specific drive LED, with 0.5s
-; delay between flashes.  X indicates which byte failed.  We start at byte 0,
-; then go down (255, 254 ... 1).  So If UC1 is dead, that failure will be
-; detected first ($00), then UE1 ($FF).
-;
-; As we have no zero page, we also have no stack, so we have to inline
-; everything.
-zp_error:
-    LDA #ERR_AND_1_LED      ; Set ERR LED and DR1 LED on to show error in left
-                            ; hand 6532, UE1 - guess at this stage
-    CPX #128                ; Compare X with 128
-    BCS @toggle_leds        ; If X >= 128, jump to toggle_leds - as we were
-                            ; right about which 6532 has failed
-    LDA #(ERR_AND_0_LED)    ; Set ERR LED and DR0 LED on to show error in right
-                            ; hand 6532, UC1
-@toggle_leds:
-    EOR #$01    ; Toggle bit 0 of the LED pattern, which indicates whether the
-                ; LEDs should be on or off
-    ; Figure out if we should turn the LEDs on or off
-    TAY                 ; Save full value in Y
-    AND #$01            ; Isolate bit 0
-    BEQ @leds_off       ; If bit 0 is 0, LEDs should be off
-    ; Turn LEDs on
-    TYA                 ; Restore our LED pattern
-    AND #ALL_LEDS       ; Isolate the LED bits - remove bit 0 before writing
-                        ; to the register
-    STA RIOT_UE1_PBD    ; Store to LED register
-    EOR #$01            ; Now restore bit 0
-    JMP @delay          ; Continue to delay
-@leds_off:
-    LDA #$00            ; Turn all LEDs off
-    STA RIOT_UE1_PBD    ; Store to LED register
-    TYA                 ; Restore our LED pattern, with bit 0 unset
-@delay:
-    LDX #$80    ; Set X to 128 (~0.5s delay)
-@x_loop:
-    LDY #$00    ; Y will count from 0 (256 iterations)
-@y_loop:
-    NOP         ; 2 cycles
-    NOP         ; 2 cycles 
-    NOP         ; 2 cycles
-    NOP         ; 2 cycles
-    NOP         ; 2 cycles
-    DEY         ; 2 cycles - if Y is 0, it will wrap to 255 before the branch
-    BNE @y_loop ; 3/2 cycles
-    DEX         ; 2 cycles - if X is 0, it will wrap to 255 before the branch
-    BNE @x_loop ; 3/2 cycles
-    JMP @toggle_leds    ; We're done - jump back to toggle LEDs
 
 .ifdef dont_build
 ; RAM test failed.

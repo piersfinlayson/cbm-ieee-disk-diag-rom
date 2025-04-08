@@ -35,7 +35,7 @@ TEST_ZP = $01
 TEST_RAM1 = $02
 TEST_RAM2 = $04
 TEST_6504_TO = $08
-TEST_DI = $10
+TEST_DEV_ID = $10
 
 ; Bit masks for RESULT_ZP.
 ZP_UC1 = $01

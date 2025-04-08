@@ -68,7 +68,7 @@ The ROM uses the drive's LEDs to indicate status:
 | ERR LED off, DR0/DR1 flashing | [All tests passed](#all-tests-passed) |
 | All LEDs solid on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) |
 | All LEDs blink briefly | [Moving to next test](#moving-to-next-test) |
-| ERR LED solid on | [Testing zero page](#testing-zero-page) |
+| DR0 and DR1 solid on | [Testing zero page](#testing-zero-page) |
 | DR0/DR1 both blink twice quickly | [Attempted to pause 6504](#pausing-the-6504) |
 | All LEDs blink twice quickly | [Failed to pause 6504](#pausing-the-6504) |
 | DR0, DR1, ERR leds strobing | [Testing static RAM](#testing-static-ram) |
@@ -104,7 +104,9 @@ A brief blink of all three LEDs indicates that a test has been completed, and th
 
 ### Testing Zero Page
 
-The ERR LED is solidly lit while testing the zero page.  However, as this test is so brief, it may look like a very quick flash.  As the zero-page is tested immediately after boot, it will happening very soon after power on, after all three LEDs go out.
+The two drive LEDs are solidly lit while testing the zero page.  However, as this test is so brief, it may look like a very quick flash.  As the zero-page is tested immediately after boot, it will happening very soon after power on.
+
+This may appear as if the ERR goes out, very shortly followed by the DR0 and DR1 LEDs.
 
 ### Pausing the 6504
 

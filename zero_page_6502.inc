@@ -59,12 +59,10 @@ CP2 = TEMP_PTR2         ; copy_6504_cmd - pointer to code destination
 ; Used by notification routines
 NFTC = TEMP_A           ; flash_led_error - notification flash target count
 NFLP = TEMP_B           ; flash_led_error - notification flash LED pattern
-NT6502 = TEMP_C         ; finished - temporary tests performed on 6502 value.
-                        ; Must be valid for entire finished: lifetime
-NRZP = TEMP_X           ; finished - temporary ZP result value
-NRCC = TEMP_X           ; finished - temporary RAM chip count value
-NRNCN = TEMP_Y          ; finished - temporary RAM nibble chip number value
-NRCR = TEMP_Z           ; finished - temporary RAM chip result value
+NRZP = TEMP_C           ; finished - temporary ZP result value
+NRCC = TEMP_C           ; finished - temporary RAM chip count value
+NRNCN = TEMP_X          ; finished - temporary RAM nibble chip number value
+NRCR = TEMP_Y           ; finished - temporary RAM chip result value
 
 ; Uniquely assigned temporary storage locations.  These are uniquely assigned
 ; to specific routines, as these routines use is widespread.
@@ -97,6 +95,6 @@ DEVICE_ID = $22 + ZP_OFFSET
 RESULT_RAM_TEST = $23 + ZP_OFFSET
 
 ; Used to store test results from the 6504.
-; - Bit 0 contains 0 if successful, 1 if failure - see TESTS_PERFORMED_6502
+; - Bit 0 contains 0 if successful, 1 if failure - see TESTS_6502
 ;   for whether this has been attempted (and hence this bit is valid)
 RESULT_6504 = $24 + ZP_OFFSET
