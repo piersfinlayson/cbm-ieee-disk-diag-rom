@@ -27,3 +27,16 @@ DR01_LEDS = DR0_LED | DR1_LED
 ; Magic byte at the start of the diagnostics ROM (located at $D000), which is
 ; tested by the stock ROMs, to see if the diagnostics ROM is present.
 DIAG_START_BYTE = $55
+
+; Bit masks for TESTS_6502 zero page variable.  The bits are in this order, as
+; this is the order finished: goes through them reporting any errors and other
+; results.
+TEST_ZP = $01
+TEST_RAM1 = $02
+TEST_RAM2 = $04
+TEST_6504_TO = $08
+TEST_DI = $10
+
+; Bit masks for RESULT_ZP.
+ZP_UC1 = $01
+ZP_UE1 = $02
