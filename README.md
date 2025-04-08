@@ -162,6 +162,8 @@ The static RAM test is relatively straightforward.  Each byte is tested in turn 
 
 ### ⏸️Pausing the 6504
 
+**🚧 Work in progress - not yet functional 🚧**
+
 Before testing RAM $1000-$10FF, the diagnostics ROM attemptes to pause the 6504.  This is signalled by flashing DR0 and DR1 twice in very quick succession.  The ROM will wait for up to 1s for a response from the 6504 that it has paused.
 
 This test has the added benefit of checking that the 6504 is running, and behaving as expected - if the diagnostics ROM can take it over and pause it, the 6504 and its ROM (stored in the 6530 RRIOT UK3) are working.
