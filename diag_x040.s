@@ -379,7 +379,7 @@ report_dev_id:
     LDA TESTS_6502      ; Load the tests performed to A
 @dev_id_check:
     ORA #TEST_DEV_ID    ; Check if device ID test was performed
-    BCC @done           ; If not, skip to next check
+    BEQ @done           ; If not, skip to next check
 
     LDY DEVICE_ID       ; Initialize Y to the device ID
     LDX #$40            ; Set X to 64 (~0.25s delay)
