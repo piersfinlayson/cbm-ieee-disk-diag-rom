@@ -154,9 +154,9 @@ Two static RAM tests are performed:
 - The first tests $1100-$13FF, $2000-$23FF, $3000-$33FF and $4000-43FF.
 - THe second, which runs after an attempt to take over control of the 6504, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the 6504, to take it over.  We try to take the 6504 over before testing this range, so we avoid crashing or confusing the 6504 by changing RAM from under it. 
 
-The DR0 and DR1 LEDs alternate as each 1K bank of RAM is tested.
-- For the first static RAM test you should see them alternating back and forth, for a total of 4 illuminations.
-- For the second, you will just set one of the LEDs light, very briefly.
+The DR0 and DR1 LEDs illuminate during each page (256 byte) test, with the LED switching for each page of RAM is tested.
+- For the first static RAM test you should see them blinking alternating back and forth, for a total of 15 illuminations.
+- For the second, you will just set one of the LEDs (DR0) light, briefly.
 
 The static RAM test is relatively straightforward.  Each byte is tested in turn with a variety of patterns.  If a failure is hit on both the upper nibble and lower nibble for an address in a particular bank, the remaining tests for that bank is skipped - as this demonstrates both RAM chips for that bank are faulty.  
 

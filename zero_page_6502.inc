@@ -47,7 +47,9 @@ REX = TEMP_C            ; get_error_shift_count - X storage
 RBPI = TEMP_X           ; test_ram_byte - pattern index
 RBPY = TEMP_Y           ; test_ram_byte_pattern - Y storage
 RBPN = TEMP_Z           ; test_ram_byte_pattern - nibble storage
-RESC_RTN = TEMP_RTN_A
+RBPT = TEMP_RTN_A       ; test_ram_byte - temporary pattern storage
+RESC_RTN = TEMP_RTN_B   ; get_error_shift_count - how much to shift error
+                        ; value for chip/nibble under test
 RP1 = TEMP_PTR1         ; test_ram_page - pointer to ram test table 
 RP2 = TEMP_PTR2         ; test_ram_byte(_pattern) - pointer to byte under test
 
@@ -59,10 +61,11 @@ CP2 = TEMP_PTR2         ; copy_6504_cmd - pointer to code destination
 ; Used by notification routines
 NFTC = TEMP_A           ; flash_led_error - notification flash target count
 NFLP = TEMP_B           ; flash_led_error - notification flash LED pattern
-NRZP = TEMP_C           ; finished - temporary ZP result value
-NRCC = TEMP_C           ; finished - temporary RAM chip count value
-NRNCN = TEMP_X          ; finished - temporary RAM nibble chip number value
-NRCR = TEMP_Y           ; finished - temporary RAM chip result value
+NFLPO = TEMP_C          ; flash_led_error - notification flash LED pattern original
+NRZP = TEMP_X           ; finished - temporary ZP result value
+NRCC = TEMP_X           ; finished - temporary RAM chip count value
+NRNCN = TEMP_Y          ; finished - temporary RAM nibble chip number value
+NRCR = TEMP_Z           ; finished - temporary RAM chip result value
 
 ; Uniquely assigned temporary storage locations.  These are uniquely assigned
 ; to specific routines, as these routines use is widespread.
