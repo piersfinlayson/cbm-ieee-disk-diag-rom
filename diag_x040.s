@@ -6,6 +6,9 @@
 ;
 ; See [README.md] for build and usage instructions.
 
+CPU_6502 = 1
+.include "shared.inc"
+
 ; Version numbers
 MAJOR_VERSION = $00
 MINOR_VERSION = $01
@@ -13,77 +16,61 @@ PATCH_VERSION = $02
 RESERVED = $00
 
 ; Constants
-
-; Zero page constants
-ZP = $00
-TEST_PTR = $00
-TEST_LOW_BYTE = $00
-TEST_HIGH_BYTE = $01
-DEVICE_ID = $02             ; Do not re-use
-DELAY_TEMP_X = $03          ; Can be re-used when delay subroutine not used
-DELAY_TEMP_Y = $04          ; Can be re-used when delay subroutine not used
-FLASH_COUNT = $05           ; Can be re-used after flash_led_error subroutine
-FLASH_LED_PATTERN = $06     ; Can be re-used after flash_led_error subroutine
-RAM_TEST_TEMP = $07         ; Can be re-used after RAM test/error subroutines
-COPY_6504_SRC = $08         ; $09 also required
-COPY_6504_DEST = $0A        ; $0B also required
-STATUS_6504_CHECK = $0C
-BLINK_TEMP = $0D            ; Used by blink subroutine
-BLINK_TEMP2 = $0E            ; Used by blink subroutine
-
-; RIOT chip addresses
-RIOT_UE1_PBD = $0282
-RIOT_UE1_PBDD = $0283
-
-; LED bit masks
-ERR_LED = $20
-DR0_LED = $10
-DR1_LED = $08
-ALL_LEDS = ERR_LED | DR0_LED | DR1_LED
-ERR_AND_0_LED = ERR_LED | DR0_LED
-ERR_AND_1_LED = ERR_LED | DR1_LED
-DR01_LEDS = DR0_LED | DR1_LED
-
-; Macros
-
-; Helper macro for Commodore-style strings, which are terminated with the last
-; byte having the high bit set.  Saves us a byte and is slightly easier to
-; test when the string terminates.
-.macro CbmString str
-    .repeat .strlen(str)-1, i
-        .byte .strat(str, i)
-    .endrepeat
-    .byte .strat(str, .strlen(str)-1) | $80
-.endmacro
+.include "zero_page_6502.inc"
+.include "constants_6502.inc"
 
 ; Set first byte to $55 to indicate that this is a valid diagnostics ROM, if
 ; located at $D000.
 ;
 ; Follow that by the version number, which is 3 bytes long.
+;
 ; We want the diagnostics ROM entry point to be at $D005, so we pad with
 ; another byte and then jump to the start of the zero-page tested and stack
 ; enabled part of our code.
 .segment "DIAGS"
-.byte $55
+.byte DIAG_START_BYTE
 .byte MAJOR_VERSION
 .byte MINOR_VERSION
 .byte PATCH_VERSION
 .byte RESERVED
-    JMP d000_rom_start  ; Jump to the start of the code - we ship the zero page
+    JMP with_stack_main ; Jump to the start of the code - we skip the zero page
                         ; test, and setting up the stack, as the main ROM has
                         ; already done that when we're the dignostics ROM.  No
-                        ; point in JSR and RTS here, as the main ROM JMPs to us.
+                        ; point in JSR and RTS here, as the main ROM JMPs to
+                        ; us.
 
 .segment "DATA"
-AuthorString: CbmString "piers.rocks"
+CopyrightString: .asciiz "(c) 2025 Piers Finlayson"
+RepoString: .asciiz "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
+
+; Pages to test in our first RAM test
+RamTest1:
+    .byte $11, $12, $13
+    .byte $20, $21, $22, $23
+    .byte $30, $31, $32, $33
+    .byte $40, $41, $42, ($43 | $80)
+
+; Pages to test in our second RAM test
+RamTest2:
+    .byte ($10 | $80)
+
+; Map low nibble of page number to LEDs to light
+RamTestLedPattern:
+    .byte DR0_LED, DR1_LED, DR0_LED, DR1_LED
+
+; Byte patterns used to test RAM.  Finish with 0 to leave the RAM in that
+; state.
+RamTestBytePattern:
+    .byte $FF, $55, $AA, $A5, $5A, $24, $42, $00
 
 .segment "CODE"
 start:
     CLD             ; Clear decimal mode
     SEI             ; Disable interrupts
-    LDA #ERR_LED    ; Turn on ERR LED.  We deliberately only turn on the ERR
-                    ; LED, as all three LEDs are lit before we do this - it
-                    ; shows we are alive
+    LDA #DR01_LEDS  ; Turn on DR0 and DR1 LEDs for the zero page test.
+                    ; We deliberately don't turn on the ERR LED, as there is
+                    ; no error to report yet, and so this differentiates
+                    ; between the CPU not booted (all LEDs lit) and now 
     STA RIOT_UE1_PBD
     LDA #ALL_LEDS   ; Set LED pins to outputs
     STA RIOT_UE1_PBDD
@@ -94,238 +81,111 @@ start:
 ; We don't have zero page, stack or static RAM at this point as it's all
 ; untested.  Therefore we only have A, X and Y registers to work with.  We
 ; could also use S (via TXS and TSX).
+;
+; If this routine complete successfully, it has zeroed the entire zero page.
 zp_test:
-    LDX #$00        ; Initialize X to 0 (start point for zero page RAM test)
+    LDX #$00        ; Initialize X to $00 (will wrap, so we start at $FF)
     LDY #$55        ; Load Y with $55 (01010101 - test pattern)
 @fill:
+    DEX             ; Decrement X (note: wraps from 0 to 255 first time)
     STY ZP,X        ; Store test pattern in zero page location X
-    DEX             ; Decrement X (note: wraps from 0 to 255)
     BNE @fill       ; Loop until all zero page locations are filled with test
                     ; pattern
 @test:
+    DEX             ; Decrement X (note: wraps from 0 to 255 first time)
     LDA #$AA        ; Load A with $AA (10101010 - complement of test pattern)
     ASL ZP,X        ; Shift left memory at ZP+X (turns $55 into $AA)
     EOR ZP,X        ; XOR with memory (should be 0 if memory working)
     STA ZP,X        ; Store result in memory
     BNE @error      ; If not zero, memory failed - jump to bad zero page
                     ; handler
-    DEX             ; Decrement X
+    LDA #$00        ; Initialize tested location to 0
+    STA ZP,X
+    CPX #$00        ; Check if we've done all zero page locations
     BNE @test       ; Loop until all zero page locations are verified
-    JMP setup_stack ; All zero page locations are verified, so jump to
-                    ; setup_stack
+    JMP @done       ; We're done
 @error:
-    JMP zp_error    ; Jump to zero page error handler
+    CPX #$80         ; Test if the upper zero page (UE1 failed)
+    BCS zp_error    ; It did, jump to final error handler - we won't do any
+                    ; further testing, as a broken UE1 is fatal.
+
+    ; No, failure was in UC1.  This means the UE1 zero page is OK - as we
+    ; test that first.  Hence we can set the result, and then move on to the
+    ; next test.
+    LDX #ZP_UC1     ; Set the ZP result
+    STX RESULT_ZP
+@done:
+    LDA #TEST_ZP    ; Mark this test has having been performed
+    STA TESTS_6502  ; Store result in zero page
 
 ; Setup the stack, which shadows the zero page - hence there's no need to
 ; test the stack memory.  We do this after testing the zero page.
-setup_stack:
-    LDX #$FF    ; Set up stack pointer
-    TXS         ; Set up stack pointer to $1FF
+setup_stack:    
+    LDX #STACK_PTR
+    TXS
 
-; Between tests - had to wait til stack was setup before calling.
-; This is also our $D000 ROM entry point, JMPed to by $D005.
-d000_rom_start:
+; From this point onwards we have a stack, so can start calling subroutines.
+; Each test is executed with a call to between_tests between them.  This blinks
+; the drive LEDs to indicate a test completed and the next one will be run.
+;
+; This is also our $D000 ROM entry point, JMPed to by $D005, as when we are
+; launched as a diagnostics ROM, the main $F000/$E000 ROMs have already tested
+; zero page and set up the stack.
+with_stack_main:
     JSR between_tests
 
-; Attempt to pause the 6504 processor.
-;
-; This is done by copying a routine to the 6504 processor to pause, until we
-; tell it to restart (reset).  This is done via the shared RAM.  We haven't
-; actually tested the static RAM (which is the shared RAM) yet, so we can't
-; guarantee this will work.  Nor can be guarantee that the 6504 is running
-; and operating correctly.  However, it is not very safe to do the static RAM
-; test without the 6504 being paused, as it will be trying to access the
-; static RAM at the same time.
-;
-; It is possible that something bad happens to our processor as part of this
-; routine.  Hence we use the first bank of static RAM to copy the routine,
-; using job 0 (so $1100-$11FF).  This is the first bank of shared RAM, which is
-; the first bank of static RAM we'll be testing shortly.  Hence, if we crash,
-; we would almost certainly have crashed immediately afterwards anyway.  So
-; this is not a particularly bad thing to do.
-disable_6504:
-    ; First of all, blink both DR1 and DR0 LEDs twice times in quick succession
-    ; to indicate that we are about to pause the 6504.
-    LDX #$40            ; Set X to 0.25 second delay
-    LDY #$40            ; Set Y to 0.25 second delay
-    LDA #DR01_LEDS      ; Set LED pattern to DR0 and DR1 LEDs
-    JSR blink           ; Blink twice
-    JSR blink
+    JSR get_device_id
 
-    ; Now pause it
-    JSR pause_6504
-
-    ; Set up delays again - we'll use same delays whether success or failure
-    LDX #$40            ; Set X to 0.25 second delay
-    LDY #$40            ; Set Y to 0.25 second delay
-
-    ; Check if the 6504 has paused - pause returns A = $00 if it has, $01 if
-    ; it hasn't.
-    CMP #$00
-    BEQ @6504_paused
-
-    ; Didn't pause - blink all LEDs quickly twice to indicate error with 6504
-    LDA #ALL_LEDS       ; Set LED pattern to all LEDs
-    JMP @final_blinks   ; Do the blinks
-@6504_paused:
-    ; Blink both DR1 and DR0 LEDs twice times in quick succession again to
-    ; indicate that we paused the 6504 successfully.
-    LDA #DR01_LEDS      ; Set LED pattern to DR0 and DR1 LEDs
-@final_blinks:
-    JSR blink           ; Blink twice
-    JSR blink
-
-; Run the RAM test
-;
-; RAM is located at $1000-$13FF, $2000-$23FF, $3000-$33FF and $4000-$43FF.
-ram_test:
-    LDX #$10    ; Initialize X to $10 (high byte for RAM test)
-    LDY #$00    ; Initialize Y to $00 (low byte for RAM test)
-@led_pattern:
-    ; This creates a pattern with the LEDs to indicate which page is being
-    ; tested.  DR1 LED is on for $1xxx.  DR0 LED is on for $2xxx.  DR1 and
-    ; DR0 are on for $3xxx. The ERR LED is on for $4xxx.
-    ; As the high byte location is in the top most nibble $x0, and the lower
-    ; most LED bit (DR1) is PB3, we need to shift the high byte right by 1 bit
-    ; after getting rid of the low nibble.
-    TXA                 ; Load page number
-    AND #$70            ; Isolate the bits we're interested in
-    LSR A               ; Shift right by 1 bit to get the value to write to
-                        ; the 6532
-    STA RIOT_UE1_PBD    ; Store to the LED register
-@y_loop:
-    ; Test with various patterns
-    LDA #$55
-    JSR ram_byte_test
-    LDA #$AA
-    JSR ram_byte_test
-    LDA #$A5
-    JSR ram_byte_test
-    LDA #$5A
-    JSR ram_byte_test
-    LDA #$24
-    JSR ram_byte_test
-    LDA #$42
-    JSR ram_byte_test
-    LDA #$00
-    JSR ram_byte_test
-    LDA #$FF
-    JSR ram_byte_test
-    ; Check if we should continue testing this page
-    INY         ; Increment Y
-    BNE @y_loop ; Loop until all bytes in the page are filled with test
-                ; pattern
-    ; See if we are done with the current RAM chip - we test up to $x3FF
-    INX         ; Once that's done, increment X (page number)
-    TXA         ; Copy X to A
-    AND #$03    ; Isolate the first 2 bits
-    BNE @led_pattern    ; If X is not a multiple of 4, loop back to test
-                        ; next page
-    ; We are done with the current RAM chip.  Increment the page number by
-    ; $10, to move to the next RAM chip
-    TXA         ; Reload the upper byte of the address
-    AND #$F0    ; Isolate the upper nibble (the page number)
-    CLC         ; Clear carry bit to avoid affecting the add - although it
-                ; probably wasn't set
-    ADC #$10    ; Add $10 to the page number (moves from $1000 to $2000,
-                ; $2000 to $3000, etc)
-    TAX         ; Store the new page number in X
-    CPX #$50    ; Check if we are done with the RAM test
-    BNE @led_pattern    ; Starting testing the next chip
-
-; Between tests
     JSR between_tests
+
+    ; Run first RAM test - this tests all static RAM expect that which the
+    ; 6504 might be accessing ($1000-$10FF).
+    LDX #<RamTest1          ; Load low byte of test table address
+    LDY #>RamTest1          ; Load high byte of test table address
+    JSR test_ram_table      ; Call routine to test the RAM
+    LDA #TEST_RAM1          ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502          ; Store result in zero page
+    JSR check_ram_result    ; Check we can continue
+
+    JSR between_tests
+
+    ; Take control of the 6504
+    JSR control_6504
+
+    JSR between_tests
+
+    ; Run the second RAM test - this tests $1000-$10FF now we've attempted to
+    ; take control of the 6504.  (If we failed it's likely the 6504 isn't
+    ; running anyway.)
+    LDX #<RamTest2          ; Load low byte of test table address
+    LDY #>RamTest2          ; Load high byte of test table address
+    JSR test_ram_table      ; Call routine to test the RAM
+    LDA #TEST_RAM2          ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502          ; Store result in zero page
+    JSR check_ram_result    ; Check we can continue
+
+    JSR between_tests
+
+    JMP finished
+with_stack_main_end:
+; End of main test routine
 
 ; Get the hardware configured device ID from the drive.
 ; Lines PB0, PB1 and PB2 are used to select this.  If they are low, they are
 ; 0.  PB0 is the least significant bit, PB2 is the most significant bit.
+; Device IDs are generally expected to be between 8-15, so we have to add 8 to
+; the result.
 get_device_id:
-    LDA #$00            ; Clear A
-    STA RIOT_UE1_PBD    ; Set all LEDs off
     LDA RIOT_UE1_PBD    ; Read port B status from the RIOT chip
     AND #$07            ; Just select the 3 least significant bits
     ORA #$08            ; Add 8 to get the device ID.
     STA DEVICE_ID       ; Store the device ID in zero page
-
-; Between tests
-    JSR between_tests
-
-; Our diagnostics routine is now done, so we turn off the ERR LED and flash
-; the DR0 and DR1 LEDs a number of times to co-incide with our device ID.
-; Then pause for 1 second and start again.
-finished:
-    LDA #$00                    ; Initialize the flash count to 0
-    ; Pause before starting
-    LDX #$B0                    ; Set X to $B0 (0.75 second delay, added to
-                                ; 0.25s delay at end of last flash = 1s)
-    JSR delay                   ; Call delay routine
-    LDX #$40                    ; Set X to 64 (~0.25s delay)
-@flash_loop:
-    CMP DEVICE_ID               ; Compare the flash count with the device ID
-    BEQ finished                ; If equal, we are done flashing the LEDs this
-                                ; time around
-    LDY #(DR0_LED | DR1_LED)    ; Set DR0 and DR1 LEDs on
-    STY RIOT_UE1_PBD
-    JSR delay                   ; Call delay routine
-    LDY #$00                    ; Turn off all LEDs
-    STY RIOT_UE1_PBD
-    JSR delay                   ; Call delay routine
-    CLC                         ; Clear carry bit before adding just in case
-    ADC #$01                    ; Increment the flash count
-    JMP @flash_loop             ; Loop back to flash the LEDs again
-
-; ram_byte_test
-;
-; Test pattern is provided in the accumulator.
-; High byte of the address is in the X register, and the low byte is in
-; the Y register.  The test pattern is in the accumulator.
-; The address to be tested is stored to the TEST_PTR zero page location,
-; high byte and low byte.
-; Stores it in the RAM location to be tested, which is pointed to by the
-; TEST_PTR zero page location.
-; Stores an interverted test pattern in RAM_BYTE_TEST zero page location.
-; Reads back the byte from the RAM location, and XORs it with the inverted
-; test pattern.  If the result is not zero, the RAM test has failed.
-; JSRs to ram_error subroutine, in case I want that routine to return and
-; continue running in the future.
-ram_byte_test:
-    STX TEST_HIGH_BYTE      ; Store page number in zero page
-    STY TEST_LOW_BYTE       ; Store byte in zero page
-    ; We will have to re-instate both X and Y before returning
-    TAX                     ; Stored test pattern in X for comparisons later
-    LDY #$00                ; Clear Y register
-    STA (TEST_PTR),Y        ; Store test pattern in the appropriate RAM address
-
-; Check lower nibble
-    LDA (TEST_PTR),Y        ; Read back the byte from RAM
-    AND #$0F                ; Isolate the lower nibble
-    STA RAM_TEST_TEMP       ; Store the actual lower nibble in RAM_TEST_TEMP
-    TXA                     ; Load A with the expected value
-    AND #$0F                ; Isolate the lower nibble
-    CMP RAM_TEST_TEMP       ; Compare with the actual value
-    BEQ @check_upper        ; Lower nibble good - check upper nibble
-    ; Lower nibble was wrong
-    LDA #$01                ; Set the error nibble value to 2 to indicate the
-                            ; lower nibble test failed
-    JMP @error              ; Jump to error handler
-@check_upper:
-    ; Check upper nibble
-    LDA (TEST_PTR),Y        ; Read back the byte from RAM (again)
-    AND #$F0                ; Isolate the upper nibble
-    STA RAM_TEST_TEMP       ; Store the actual upper nibble in RAM_TEST_TEMP
-    TXA                     ; Load A with the expected value
-    AND #$F0                ; Isolate the upper nibble
-    CMP RAM_TEST_TEMP       ; Compare with the actual value
-    BEQ @return             ; If equal, test succeeded, so return
-    ; Upper nibble was wrong
-    LDA #$02                ; Set the error nibble value to 1 to indicate the
-                            ; upper nibble test failed
-@error:
-    JSR ram_error           ; If not zero, test failed, so report error
-@return:
-    LDY TEST_LOW_BYTE       ; Reload Y register
-    LDX TEST_HIGH_BYTE      ; Reload X register
-    RTS                     ; Return from subroutine
+    LDA #TEST_DEV_ID    ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502      ; Store result in zero page
+    RTS
 
 ; Zero page test failed.  Flash all ERR LED and specific drive LED, with 0.5s
 ; delay between flashes.  X indicates which byte failed.  We start at byte 0,
@@ -337,7 +197,7 @@ ram_byte_test:
 zp_error:
     LDA #ERR_AND_1_LED      ; Set ERR LED and DR1 LED on to show error in left
                             ; hand 6532, UE1 - guess at this stage
-    CPX #128                ; Compare X with 128
+    CPX #$80                ; Compare X with 128
     BCS @toggle_leds        ; If X >= 128, jump to toggle_leds - as we were
                             ; right about which 6532 has failed
     LDA #(ERR_AND_0_LED)    ; Set ERR LED and DR0 LED on to show error in right
@@ -376,6 +236,469 @@ zp_error:
     BNE @x_loop ; 3/2 cycles
     JMP @toggle_leds    ; We're done - jump back to toggle LEDs
 
+; Our diagnostics routine is now done, so we go through and report:
+; - any errors
+; - the device ID
+;
+; We do this in a loop, forever.
+finished:
+    JSR between_reports ; Pause
+    JSR report_zp       ; Report zero page errors, if any
+    JSR report_ram      ; Report RAM errors, if any
+    JSR report_6504     ; Report 6504 errors, if any
+    JSR report_dev_id   ; Report the device ID, if we have it
+    JMP finished        ; Restart sequence
+
+; Report any zero page error(s)
+;
+; Uses RESULT_ZP (set by the zero page test)
+;
+; Destroys A, X and Y
+report_zp:
+    ; Don't bother checking whether we did the zero page test - we know we
+    ; did if we get here.
+
+    ; Handle ZP error notifications
+    LDA RESULT_ZP       ; Load the result of the zero page test
+    .assert ZP_UC1 = $01, error, "ZP_UC1 is not first bit"
+    .assert ZP_UE1 = $02, error, "ZP_UE1 is not second bit"
+    LSR A               ; Shift right to see if UC1 zero page test failed
+    STA NRZP            ; Store off zp test result variable
+    BCC @ue1_check      ; If not, skip to next ZP check
+
+    ; UC1 zero page test failed - report it
+    LDA #$05            ; Flash 5 times for zero page error
+    LDY #DR0_LED        ; Set DR0 LED on to show error in right hand 6532, UC1
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error
+    JSR between_reports ; pause for 1s with all LEDs off
+
+@ue1_check:
+    LDA NRZP            ; Reload zp test result variable
+    LSR A               ; Shift right to see if UE1 zero page test failed
+    BCC @done           ; If not, skip to next check
+
+    ; UC1 zero page test failed - report it
+    LDA #$05            ; Flash 5 times for zero page error
+    LDY #DR1_LED        ; Set DR0 LED on to show error in right hand 6532, UC1
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error
+    JSR between_reports ; pause for 1s with all LEDs off
+
+@done:
+    RTS
+
+; Report any RAM error(s)
+;
+; Uses RESULT_RAM_TEST (set by the RAM test)
+;
+; Destroys A, X and Y
+report_ram:
+    LDA TESTS_6502      ; Load the tests performed to A
+    ORA #(TEST_RAM1 | TEST_RAM2)    ; Check if either RAM test 1 or 2 took place
+    BEQ @done           ; If not, skip to next check
+
+    ; One or both of the RAM tests happened - use RESULT_RAM_TEST to report
+    ; failed chips
+    LDA RESULT_RAM_TEST ; Load the result of the RAM test
+    LDX #$08            ; Set counter to 8, to track each chip as we check it
+    LDY #$01            ; Start with first chip on this nibble
+
+@check_chip:
+    LSR A               ; Shift right to see if this chip failed
+    BCC @next_chip      ; If not, skip to next chip
+
+    ; This chip failed - report it
+    STA NRCR            ; Store the shifted chip result, so next time we check
+                        ; the next bit (chip)
+    STX NRCC            ; Store off chip counter variable
+    STY NRNCN           ; Store nibble chip number
+
+    ; Decide which LED to flash
+    CPX #5              ; Check if we're doing the lower nibble (counts 8-5,
+                        ; so bits 0-3)
+    BCC @lower_nibble
+    ; upper nibble
+    LDY #DR0_LED        ; Set DR0 LED on to show error in upper nibble bank
+                        ; ("lower" row of chips - U_4)
+    JMP @chip_continue
+@lower_nibble:
+    LDY #DR1_LED        ; Set DR1 LED on to show error in lower nibble bank
+                        ; ("upper" row of chips - U_5)
+@chip_continue:
+    ; Set up other flash_led_error parameters
+    LDA NRNCN           ; Flash the LED the chip number of times
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error
+    JSR between_reports ; pause for 1s with all LEDs off
+
+    LDY NRNCN           ; Reload chip number
+    LDX NRCC            ; Reload test result variable
+    LDA NRCR            ; Reload the chip result
+@next_chip:
+    INY                 ; Increment nibble chip number
+    CPY #5              ; Check if we've done all 4 chips in this nibble
+    BCC @skip_y_reset   ; If not, loop back to check next chip
+    LDY #$01            ; Reset Y to 1 for the first chip on the next nibble
+
+@skip_y_reset:
+    DEX                 ; Decrement chip counter
+    BNE @check_chip     ; If not done, loop back to check next chip
+
+@done:
+    RTS
+
+; Report any 6504 error(s)
+;
+; Uses RESULT_6504 (set by the 6504 test)
+;
+; Destroys A, X and Y
+report_6504:
+    LDA TESTS_6502      ; Load the tests performed to A
+    ORA #TEST_6504_TO   ; Check if 6504 test was performed
+    BEQ @done           ; If not, skip to next check
+    
+    LDA RESULT_6504     ; Load the result of the 6504 test
+    LSR A               ; Shift right to see if the takeover failed
+    BCC @done   ; If not, skip to next check
+
+    ; 6504 test failed - report it
+    LDA #$06            ; Flash 6 times for 6504 control takeover failure
+    LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error
+    JSR between_reports ; pause for 1s with all LEDs off
+
+@done:
+    RTS
+
+; Report the device ID
+;
+; Destroys A, X and Y
+report_dev_id:
+    LDA TESTS_6502      ; Load the tests performed to A
+@dev_id_check:
+    ORA #TEST_DEV_ID    ; Check if device ID test was performed
+    BEQ @done           ; If not, skip to next check
+
+    LDY DEVICE_ID       ; Initialize Y to the device ID
+    LDX #$40            ; Set X to 64 (~0.25s delay)
+@dev_flash_loop:
+    LDA #DR01_LEDS      ; Set DR0 and DR1 LEDs on
+    STA RIOT_UE1_PBD
+    JSR delay           ; Call delay routine
+    LDA #$00            ; Turn off all LEDs
+    STA RIOT_UE1_PBD
+    JSR delay           ; Call delay routine
+    DEY                 ; Decrement the device ID
+    BNE @dev_flash_loop ; Loop back to flash the LEDs again
+
+@done:
+    JSR between_reports ; pause for 1s with all LEDs off
+    RTS
+
+; Routine to tests a table of RAM pages.
+;
+; Input: X,Y = Address of page table (X=low byte, Y=high byte)
+; The last entry in the page table must have the high bit set.
+; This routine can only test a page table up to 256 entires long
+;
+; Calls test_ram_page subroutine for each page in the table
+; The page number is passed in the accumulator (A)
+; We assume test_ram_page preserves Y
+;
+; Destroys A, X and Y
+;
+; There is an inefficiency here.  If the test for a page fails on both upper
+; and lower nibbles, we stop testing that page immediately, but continue
+; testing the other pages on the chip.  It's not likely to be substantial -
+; it's likely the tests for the other pages will fail very early on, so we
+; won't waste much time.  This is a tradeoff to keep the code simple.
+test_ram_table:
+    STX RP1             ; Store low byte of table address
+    STY RP1+1           ; Store high byte of table address
+    LDY #$00            ; Initialize index into page table
+@loop:
+
+
+
+
+    ; extra delay
+    LDX #$80
+    JSR delay
+
+
+
+    LDA (RP1),Y         ; Load page number to test from table
+    BMI @last_page      ; If high bit is set, this is the last page
+    JSR test_ram_page   ; Test this page
+    INY                 ; Move to next entry in table
+    BNE @loop           ; Continue
+    RTS                 ; Return if we somehow exceed 256 entries
+@last_page:
+    AND #$7F            ; Mask off high bit to get actual page number
+    JSR test_ram_page   ; Test the last page
+    RTS                 ; Return
+
+; Routine to test a specific RAM page
+;
+; Input: A = Page to test
+;
+; Restores Y when complete.  Destroys X and A.
+test_ram_page:
+    STY RPY                 ; Store off Y so we can restore it later
+    TAX                     ; Store page number to test in X
+
+    ; Set LED pattern to show which RAM bank (UC/UD/UE/UF) is being tested
+    AND #$03                ; Isolate the bits we're interested in
+    TAY                     ; Move the result to Y to index the lookup table
+    LDA RamTestLedPattern,Y ; Get the LED pattern for this page
+    STA RIOT_UE1_PBD        ; Store to the LED register
+
+    ; Get the error shift count for this page, in case we need it later to
+    ; properly handle any errors.  This will fill in a zero page address with
+    ; it - RESC_RTN.
+    JSR get_error_shift_count
+
+    ; Initialize Y, which is used as the byte to test within the page.
+    LDY #$00                ; Initialize Y to 0
+; Test each byte in turn
+@loop:
+    ; Test the byte - X is the page number, Y is the byte number
+    JSR test_ram_byte
+
+    ; Check whether test succeeded or failed - A holds result, which is 0 for
+    ; success, or $10 for lower nibble failed, $01 for upper nibble failed.
+    ; Both may be set.
+    CMP #$00
+    BNE @error
+; Carry on testing the next byte
+@resume:
+    INY                     ; Increment Y
+    BNE @loop               ; Next byte unless we've done 256 bytes
+@done:
+    LDY RPY                 ; Restore Y register
+    RTS
+@error:
+    ; In a failure case we have to:
+    ; - Fill in RESULT_RAM_TEST to indicate which RAM chip failed (based on
+    ;   the page number and upper/lower nibble result).
+    ; - Resume testing if only lower or upper nibble has failed so far (so we
+    ;   will properly test and report status if one nibble is working the other
+    ;   not).
+    ; - Stop testing if both nibbles in this page are duff.
+    STY RPI                 ; Store index off temporarily
+    LDY RESC_RTN            ; Get the error shift count
+    BEQ @error_shift_done   ; No shifting required as Y is 0 - skip it
+; Shift the result left by the right amount to store
+@error_shift_loop:
+    ASL A                   ; Shift A (the result) left
+    DEY
+    BNE @error_shift_loop
+; A now contains the correctly shifted value so can be ORed with the stored
+; results
+@error_shift_done:
+    ORA RESULT_RAM_TEST     ; Update test result
+    STA RESULT_RAM_TEST     ; Store the new test result
+
+    ; Continue.  We don't bother to check if both nibbles for this page has
+    ; failed because it doesn't speed things up much.  (In fact, if a RAM test
+    ; fails on the first pattern for each byte, it stops check that byte, so
+    ; it's already much faster.)
+    LDY RPI                 ; Restore index before might branch
+    JMP @resume             ; No, continue
+
+; Get the required shift count to store errors associated with a test for a
+; specific RAM page/chip.
+;
+; The RAM test itself returns 10001 if both nibbles fail, so we shift the
+; entire thing left 0-3 bit based on the page number.
+;
+; We store the error code in the RESULT_RAM_TEST zero page location.
+; Bits 0-3 cover the lower nibble of the page number ($1x-$4x)
+; Bits 4-7 cover the upper nibble of the page number ($10-$43)
+;
+; The shift count is therefore:
+; (page number upper nibble - 1)
+;
+; Inputs:
+; - X = page number
+;
+; Y is untouched and A and X restored before returning
+;
+; Returns error in RESC_RTN
+get_error_shift_count:
+    STX REX         ; Store X
+    PHA             ; Store A
+
+    ; Get upper nibble of page number
+    TXA             ; Transfer page number to A
+    LSR A           ; Shift right 4 times to get upper nibble
+    LSR A
+    LSR A
+    LSR A
+
+    ; Subtract 1 from it
+    SEC             ; Set carry for subtraction
+    SBC #$01        ; Take one from the page number upper nibble
+
+    ; Store it for later use
+    STA RESC_RTN  ; Store the shift count
+
+    ; Continue processing
+    PLA             ; Restore A
+    LDX REX         ; Restore X
+    RTS
+
+; Tests one byte of RAM with all the desired patterns.
+;
+; Inputs:
+; X = page number
+; Y = byte number
+;
+; Destroys A.  Restores X and Y.
+;
+; Returns A as 0 if successful, otherwise 
+;
+; Returns A zero if successful, otherwise bit A shows which bank/nibble(s)
+; failed
+test_ram_byte:
+    STX RP2+1                   ; Store page number
+    STY RP2                     ; Store byte number
+    LDY #$00                    ; Initialize Y to 0 to use as table index
+@loop:
+    LDA RamTestBytePattern,Y    ; Load the test pattern from the table
+    STA RBPT                    ; Store the test pattern
+    STY RBPI                    ; Store pattern index
+    JSR test_ram_byte_pattern   ; Test this pattern
+
+    ; Check result of the test in A.
+    CMP #$00                    ; Check if the test passed
+    BNE @done                   ; If not, done
+
+    ; Test succeeeded - continue processing
+    LDY RBPT                    ; Load the test pattern
+    BEQ @done                   ; If we have pattern 0, that's the last one
+    LDY RBPI                    ; Reload the index
+    INY                         ; Increment Y to get the next pattern
+    JMP @loop                   ; Go around again
+@done:
+    LDY RP2                     ; Restore Y register
+    LDX RP2+1                   ; Restore X register
+    RTS
+
+; test_ram_byte_pattern
+;
+; Test pattern is provided in the accumulator.
+; Address to be tested is stored in RP2.
+;
+; Stores it in the RAM location to be tested, which is pointed to by the
+; RAM_TEST_PTR zero page location.
+; Stores an interverted test pattern in RAM_BYTE_TEST zero page location.
+; Reads back the byte from the RAM location, and XORs it with the inverted
+; test pattern.  If the result is not zero, the RAM test has failed.
+; JSRs to ram_error subroutine, in case I want that routine to return and
+; continue running in the future.
+;
+; Destroys X, Y and A.
+;
+; Returns A zero if successful, otherwise bit A shows which bank/nibble(s)
+; failed
+test_ram_byte_pattern:
+    TAX                 ; Stored test pattern in X for comparisons later
+    LDY #$00            ; Clear Y register
+    STY RBPY            ; Clear temporary result
+    STA (RP2),Y         ; Store test pattern in the appropriate RAM address
+    LDA #$00            ; Clear A with a different value
+    LDA $FFFF           ; Read from a completely different address
+; Check lower nibble
+    LDA (RP2),Y         ; Read back the byte from RAM
+    AND #$0F            ; Isolate the lower nibble
+    STA RBPN            ; Store off the actual lower nibble
+    TXA                 ; Load A with the expected value
+    AND #$0F            ; Isolate the lower nibble
+    CMP RBPN            ; Compare with the actual value
+    BEQ @check_upper    ; Lower nibble good - check upper nibble
+    ; Lower nibble was wrong
+    LDA #$10            ; Set the error nibble value to $10 to indicate the lower
+    STA RBPY            ; Store and continue
+@check_upper:
+    LDA (RP2),Y         ; Read back the byte from RAM (again)
+    AND #$F0            ; Isolate the upper nibble
+    STA RBPN            ; Store the actual upper nibble
+    TXA                 ; Load A with the expected value
+    AND #$F0            ; Isolate the upper nibble
+    CMP RBPN            ; Compare with the actual value
+    BEQ @upper_success  ; If equal, test succeeded, so return
+    ; Upper nibble was wrong
+    LDA RBPY            ; Load the error nibble value
+    ORA #$01            ; Set the error nibble value to $01 to indicate the
+                        ; upper nibble test failed
+    JMP @done           ; Return
+@upper_success:
+    LDA RBPY            ; Reload the error value from lower
+@done:
+    RTS                 ; Return from subroutine
+
+; Check whether RAM test passed for $1000-13FF.  If not, we can't continue, and
+; will immediately jump to the finished routine.
+check_ram_result:
+    LDA RESULT_RAM_TEST ; Load RAM test result
+    AND #$11            ; Check whether RAM test passed for $1000-$13FF
+    BNE @error          ; Branch if it failed for that range
+    RTS                 ; It passed as much as we need it to
+@error:
+    JMP finished        ; It failed - we can't continue, jump immediately to
+                        ; the finished routine
+
+; Attempt to take control of the 6504 processor.
+;
+; This is done by copying a routine to the 6504 processor to take control
+; of it.  It then sits in a loop checking 2 specific bytes of shared RAM.
+; Later, we will write additional command bytes, to instruct it to test
+; various aspects of the 6504 and associated IC function.
+;  
+; We haven't actually tested the static RAM at $400-$4FF yet, which is used
+; to signal to the 6504 to execute our job.  However, this can't be helped.
+; We have at least checked the rest of the static RAM chips at $400-$7FF, so
+; there's a decent change it'll work.  And it's not safe to test $400-$4FF
+; without taking control of the 6504, as it may be trying to access the RAM
+; we're testing (writing random values to).
+;
+; In fact, we can't guarantee the 6504 is running (or even present).  So this
+; is a good test of that - we time out if we don't get a response indicating
+; our takeover has succeeded.
+control_6504:
+    ; First of all, blink both DR1 and DR0 LEDs twice in quick succession
+    ; to indicate that we are about to pause the 6504.
+    LDX #$20            ; Set X to 0.25 second delay
+    LDY #$20            ; Set Y to 0.25 second delay
+    LDA #DR01_LEDS      ; Set LED pattern to DR0 and DR1 LEDs
+    JSR blink           ; Blink twice
+    JSR blink
+
+    ; Now attempt to take the 6504 over
+    JSR takeover_6504
+
+    ; Check if the 6504 has paused - takeover returns A = $00 if it has, $01 if
+    ; it hasn't.  The last thing takeover_6504 does is LDA with the value, so
+    ; we don't need to test it - test the Z flag directly instead.
+    BEQ @done
+
+; Didn't succeed in taking over 6504 - so update the result bit (which should
+; be zero due to zero page test leaving zero page zeroed out)
+    ORA RESULT_6504     ; Mark takeover as failed
+    STA RESULT_6504
+
+@done:
+    LDA #TEST_6504_TO   ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502      ; Store result in zero page
+
+    ; Done
+    RTS
+
+.ifdef dont_build
 ; RAM test failed.
 ;
 ; We flash DR0 for the lower nibble, and DR1 for the upper nibble. 
@@ -383,14 +706,9 @@ zp_error:
 ; Together this allows the user to identify precisely which RAM chip has
 ; failed.
 ;
-; Upon calling, the zero page TEST_HIGH_BYTE location contains the address of
-; the failed RAM location.  The upper byte will be $1X, $2X, $3X or $4X, with
-; X being in the range 0-3 inclusive.  We will shift this byte right 4 times
-; to get the failed bank number (1-4), handily removing the lower nibble.
-;
-; Accumulator contains $02 for the upper nibble failing, $01 for the
-; lower nibble.  Hence by shifting this left 3 times we get $10 or $08, which
-; are the bit masks for DR0 (high) and DR1 (low) nibbles respectively.
+; Upon calling, the zero page RESULT_RAM_TEST location contains the result of
+; the RAM test, with bit 1/0 being upper/lower nibble of $1X (1 being failure)
+; bit 3/2 being $2X, etc.
 ram_error:
     ; Figure out which DR LED to flash - accumulator contains $01 for lower
     ; nibble test failed, $02 for upper nibble.
@@ -414,6 +732,7 @@ ram_error:
     JSR delay               ; Call delay routine
     ; Loop back to start flashing the LEDs
     JMP @loop
+.endif
 
 ; Subroutine to flash an LED pattern a specified number of times
 ; Input: A = number of times to flash
@@ -425,43 +744,55 @@ ram_error:
 ; Leaves ERR LED on in case the caller wants to immediately flash more LEDs
 ; without the ERR LED going out.
 flash_led_error:
-    STA FLASH_COUNT         ; Store target count
-    TYA                     ; Save LED pattern in A
-    ORA #ERR_LED            ; Set ERR LED on
-    STA FLASH_LED_PATTERN   ; Store LED pattern
-    LDA #$00                ; Initialize counter
-    CLC                     ; Clear carry
+    STA NFTC            ; Store target count
+    STY NFLPO           ; Store passed in LED pattern to restore later
+    TYA                 ; Save LED pattern in A
+    ORA #ERR_LED        ; Set ERR LED on
+    STA NFLP            ; Actual pattern to display
+    LDA #$00            ; Initialize counter
+    CLC                 ; Clear carry
 @loop:
     ; Turn on appropriate LED, along with ERR LED
-    LDY FLASH_LED_PATTERN   ; Turn on LEDs
+    LDY NFLP            ; Turn on LEDs
     STY RIOT_UE1_PBD
-    JSR delay               ; Pause
+    JSR delay           ; Pause
     ; See if we're done flashing
-    ADC #$01                ; Increment counter
-    CMP FLASH_COUNT         ; Compare with target
+    ADC #$01            ; Increment counter
+    CMP NFTC            ; Compare with target
     BEQ @done   
     ; We're not done flashing, turn off all but ERR LED
-    LDY #ERR_LED            ; Just ERR LED on
+    LDY #ERR_LED        ; Just ERR LED on
     STY RIOT_UE1_PBD
-    JSR delay               ; Pause
+    JSR delay           ; Pause
     ; Go around the loop again
     JMP @loop
 @done:
     ; Restore registers - X is never modified.
-    LDY FLASH_LED_PATTERN   ; Reload Y
-    LDA FLASH_COUNT         ; Reload A
-    RTS                     ; Return
+    LDY NFLPO           ; Reload Y
+    LDA NFTC            ; Reload A
+    RTS                 ; Return
 
-; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
-; mark the transition from one test to the next.
+; Routine to pause for 1s, flash all drive LEDs briefly, then pause again for
+; 1s, to mark the transition from one test to the next.
+;
+; Destroys A, X and Y
 between_tests:
     LDX #$00            ; Off for 1s 
     LDY #$40            ; On for 0.25s
-    LDA #ALL_LEDS       ; Set LED pattern to all LEDs
+    LDA #DR01_LEDS      ; Set LED pattern to both drive LEDs
     JSR blink           ; Blink
     RTS                 ; Done
 
-; Blink all LEDs.
+; Routine to pause for 1s, between each report.
+;
+; Destroys X
+between_reports:
+    LDX #$00
+    STX RIOT_UE1_PBD    ; Turn off all LEDs
+    JSR delay           ; 1s delay
+    RTS
+
+; Blink LEDs.
 ;
 ; Input: X - length of delay before and after blink in 1/256th second units
 ;        Y - length of delay while LEDs on in 1/256th second units
@@ -469,24 +800,24 @@ between_tests:
 ;
 ; A, X and Y are restored before returning.
 blink:
-    STX BLINK_TEMP      ; Store X in BLINK_TEMP
-    STY BLINK_TEMP2      ; Store Y in BLINK_TEMP2
+    STX BX              ; Store X
+    STY BY              ; Store Y
 
     LDX #$00            ; Set LEDs off
     STX RIOT_UE1_PBD
-    LDX BLINK_TEMP      ; Pause
+    LDX BX              ; Pause
     JSR delay
 
     STA RIOT_UE1_PBD    ; Turn LEDs on using pattern in A
-    LDX BLINK_TEMP2     ; Pause for on time
+    LDX BY              ; Pause for on time
     JSR delay
 
     LDX #$00            ; Set LEDs off
     STX RIOT_UE1_PBD
-    LDX BLINK_TEMP      ; Pause (also returns X to original value)
+    LDX BX              ; Pause (also returns X to original value)
     JSR delay
 
-    LDY BLINK_TEMP2     ; Restore Y
+    LDY BY              ; Restore Y
     RTS
 
 ; Configurable delay routine.
@@ -499,55 +830,46 @@ blink:
 ; The timing of this routine is rough - it delays slightly under the requested
 ; time.
 delay:
-    STX DELAY_TEMP_X    ; Save X register
-    STY DELAY_TEMP_Y    ;  Save Y register
+    STX DX      ; Save X register
+    STY DY      ;  Save Y register
 @x_loop:
-    LDY #$00            ; Y will count from 0 (256 iterations)
+    LDY #$00        ; Y will count from 0 (256 iterations)
 @y_loop:
-    NOP                 ; 2 cycles
-    NOP                 ; 2 cycles 
-    NOP                 ; 2 cycles
-    NOP                 ; 2 cycles
-    NOP                 ; 2 cycles
-    DEY                 ; 2 cycles
-    BNE @y_loop         ; 3/2 cycles
-    DEX                 ; 2 cycles
-    BNE @x_loop         ; 3/2 cycles
-    LDX DELAY_TEMP_X    ; Restore X register
-    LDY DELAY_TEMP_Y    ; Restore Y register
-    RTS                 ; 6 cycles
+    NOP             ; 2 cycles
+    NOP             ; 2 cycles 
+    NOP             ; 2 cycles
+    NOP             ; 2 cycles
+    NOP             ; 2 cycles
+    DEY             ; 2 cycles
+    BNE @y_loop     ; 3/2 cycles
+    DEX             ; 2 cycles
+    BNE @x_loop     ; 3/2 cycles
+    LDX DX      ; Restore X register
+    LDY DY      ; Restore Y register
+    RTS             ; 6 cycles
 
 ; Our no-op interrupt handler
 empty_handler:
     RTI
 
-STATUS_6504 = $13FD
-CMD_6504_1 = $13FE
-CMD_6504_2 = $13FF
-
-CMD_RESET_1 = $FF
-CMD_RESET_2 = $FF
-
-JOB_0_SLOT = $1003
-JOB_EXEC = $60
-
-STATUS_6504_RUNNING = $01
-STATUS_6504_RESETTING = $02
-
-; Attempts to pause the 6504 processor.
+; Attempts to takeover the 6504 processor.
 ;
 ; No inputs
 ;
 ; Will overwrite X and Y
 ;
-; Returns with A = $00 if the 6504 has paused, $01 if it has not responded
-pause_6504:
-    LDX #$00                    ; Set X to 0
-    STX STATUS_6504             ; Set the status to 0
-    JSR copy_6504_cmd           ; Copy the 6504 command to the shared RAM
-    JSR exec_6504_job           ; Execute the 6504 job
-    LDX #STATUS_6504_RUNNING    ; Wait for the 6504 to start running our job
-    JSR wait_6504_status
+; Returns with A = $00 if the 6504 has paused, $01 if it has not responded.
+; Also returns Z flag set if the 6504 has paused.
+takeover_6504:
+    LDX #STATUS_6504_NONE
+    STX STATUS_6504             ; Set the status to none
+    .assert CMD_NONE = STATUS_6504_NONE, error, "CMD_NONE != STATUS_NONE"
+    STX CMD1              ; Set both commands to none
+    STX CMD2
+    JSR copy_6504_cmd           ; Copy the 6504 control routine to shared RAM
+    JSR exec_6504_job           ; Trigger the 6504 to execute this routine
+    LDX #STATUS_6504_RUNNING    ; Wait for it to start running our routine
+    JSR wait_6504_status        ; Must be last thing to set Z flag
     RTS
 
 ; Copy the 6504 cmd to the shared RAM, at $1100, which is job 0.
@@ -557,28 +879,28 @@ pause_6504:
 ; Will overwrite A, X and Y
 copy_6504_cmd:
     ; Get source address for 6504 code we want to copy
-    LDA CODE_6504_CMD_PTR   ; Get low byte of source address
-    STA COPY_6504_SRC       ; Store in source address
-    LDA CODE_6504_CMD_PTR+1 ; Get high byte of source address
-    STA COPY_6504_SRC+1     ; Store in source address
+    LDA #<CODE_6504_CMD_PTR ; Get low byte of source address
+    STA CP1                 ; Store in source address
+    LDA #>CODE_6504_CMD_PTR ; Get high byte of source address
+    STA CP1+1               ; Store in source address
 
     ; Set up destination addresses for 6504 code we want to copy
     LDA #$00                ; Set destination to $1100
-    STA COPY_6504_DEST      ; Store in destination address
+    STA CP2                 ; Store in destination address
     LDA #$11
-    STA COPY_6504_DEST+1    ; Store in destination address
+    STA CP2+1               ; Store in destination address
 
     ; Do the copy, byte by byte.
     LDY #$00                ; Set Y to 0 as an index for the copy
     LDX CODE_6504_CMD_LEN   ; Get the length of the command
     BEQ @copy_done          ; If length is 0, we're done
 @copy_loop:
-    LDA (COPY_6504_SRC),Y   ; Load the byte from the source address
-    STA (COPY_6504_DEST),Y  ; Store it in the destination address
+    LDA (CP1),Y             ; Load the byte from the source address
+    STA (CP2),Y             ; Store it in the destination address
     INY                     ; Increment Y
     BNE @not_wrap           ; Check if we crossed a page
-    INC COPY_6504_SRC+1     ; If so, increment high bytes
-    INC COPY_6504_DEST+1
+    INC CP1+1               ; If so, increment high bytes
+    INC CP2+1
 @not_wrap:
     DEX                     ; Decrement counter
     BNE @copy_loop          ; Continue until all bytes copied
@@ -589,30 +911,30 @@ copy_6504_cmd:
 ;
 ; X contains status byte to wait for
 ;
-; Overwrites X
+; Overwrites X and Y
 ;
 ; Returns with A = $00 if the 6504 reached the state, $01 if it is not.
+; This also sets the Z flag in the success case.
 wait_6504_status:
-    STX STATUS_6504_CHECK       ; Store the status byte to check for
-    LDY #$00                    ; Set Y to 0 (256) for total number of times to
-                                ; check
+    STX CWS             ; Store the status byte to check for
+    LDY #$00            ; Set Y to 0 (256) for total number of times to check
 @check:
-    DEY                         ; Decrement Y
-    BEQ @failure                ; If Y reached 0, 6504 didn't start reach
-                                ; desired state
-    LDA STATUS_6504             ; Read the status byte
-    CMP STATUS_6504_CHECK       ; Check if the 6504 is in desired state
+    DEY                 ; Decrement Y
+    BEQ @failure        ; If Y reached 0, 6504 didn't start reach desired state
+    LDA STATUS_6504     ; Read the status byte
+    CMP CWS             ; Check if the 6504 is in desired state
     BEQ @success
     ; It didn't - pause for ~1/256th second
-    LDX #$01                    ; Set delay to 1/256th second
-    JSR delay                   ; Call delay routine
-    JMP @check                  ; Loop back to check again
+    LDX #$01            ; Set delay to 1/256th second
+    JSR delay           ; Call delay routine
+    JMP @check          ; Loop back to check again
 @success:
-    LDA #$00                    ; Success
-    RTS                         ; Return
+    LDA #$00            ; Success
+    RTS                 ; Return
 @failure:
-    LDA #$01                    ; Failure
-    RTS                         ; Return
+    ; Must be last thing that sets the Z bit in this routine.
+    LDA #$01            ; Failure
+    RTS                 ; Return
 
 ; Starts the 6504 job to execute code, using job 0, and assumes code is already
 ; loaded to appropriate address, 6502:$1100, 6504:$500.
@@ -623,14 +945,6 @@ exec_6504_job:
                                 ; execute, with MSB set
     STA JOB_0_SLOT              ; Store in job slot 0
     RTS                         ; Return
-
-.ifdef F000_BUILD
-  CODE_6504_START = $FF00
-.else
-  CODE_6504_START = $DF00
-.endif
-CODE_6504_CMD_PTR = CODE_6504_START + 0
-CODE_6504_CMD_LEN = CODE_6504_START + 2
 
 ; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
 ; to copy the routine(s) we want from this binary to the shared RAM and then
