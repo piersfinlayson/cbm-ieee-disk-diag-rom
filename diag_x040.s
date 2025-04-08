@@ -759,12 +759,12 @@ flash_led_error:
     LDA NFTC            ; Reload A
     RTS                 ; Return
 
-; Routine to pause for 1s, flash all LEDs briefly, then pause again for 1s, to
-; mark the transition from one test to the next.
+; Routine to pause for 1s, flash all drive LEDs briefly, then pause again for
+; 1s, to mark the transition from one test to the next.
 between_tests:
     LDX #$00            ; Off for 1s 
     LDY #$40            ; On for 0.25s
-    LDA #ALL_LEDS       ; Set LED pattern to all LEDs
+    LDA #DR01_LEDS      ; Set LED pattern to both drive LEDs
     JSR blink           ; Blink
     RTS                 ; Done
 
