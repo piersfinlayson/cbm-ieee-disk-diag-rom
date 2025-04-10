@@ -18,7 +18,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - 🖥️ Tests presence and functioning of secondary CPU, 6504
 - 🔀 Can be run as replacememnt for main ROM or alongside stock DOS 1 ROMs
 
-## Contents
+## 📝Contents
 - [📥Installation](#installation)
 - [🚀Usage](#usage)
 - [💡LED Indicators](#led-indicators)
@@ -85,7 +85,7 @@ There are two distinct phases to the ROM's operation:
 - [▶️ Running tests](#running-tests)
 - [📊 Reporting results](#reporting-results)
 
-### Running Tests
+### 🏃Running Tests
 
 After boot and during this phase, the ERR LED is not used.  The other LEDs show the status of the testing - in order:
 
@@ -104,7 +104,7 @@ After boot and during this phase, the ERR LED is not used.  The other LEDs show 
 | DR0 and DR1 flash alternately | [Static RAM Test #2](#static-ram-test) |
 | Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 
-### Reporting Results
+### 📢Reporting Results
 
 After the above tests have run the drive goes through a reporting sequence, and repeats it forever:
 - Report any zero page error with UC1
@@ -283,11 +283,11 @@ The 4040 PCB layout is reproduced here to aid with identifying the components th
 
 ![4040 PCB Layout](./docs/schematics/4040-320806-digital-layout.png "4040 PCB Layout")
 
-## Memory Layout
+## 🗺️Memory Layout
 
 See [🗺️Memory Layout](./docs/technical/4040-memory-layout.md) for a detailed memory layout of the 6502 and 6504 processors, including the address space and the components which are mapped to each address.
 
-## Frequently Asked Questions
+## ❓Frequently Asked Questions
 
 See [❓FAQ](./FAQ.md) for a list of frequently asked questions.
 

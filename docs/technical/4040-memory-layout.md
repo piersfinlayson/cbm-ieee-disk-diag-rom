@@ -1,6 +1,6 @@
 # 🗺️2040/3040/4040 Memory Layout
 
-## Contents
+## 📝Contents
 
 - [🗺️Memory Map](#️memory-map)
     - [6502](#6502)
