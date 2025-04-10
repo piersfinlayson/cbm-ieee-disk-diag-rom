@@ -64,6 +64,7 @@ STATUS_6504_RESETTING = $02
 ; the 6504, running stock ROM code, that it should execute our code.  This
 ; comes from the 6504 ROM (901466).
 JOB_EXEC = $60
+JOB_BUMP = $40
 .endif
 
 .ifdef CPU_6502

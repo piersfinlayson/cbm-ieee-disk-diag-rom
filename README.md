@@ -25,7 +25,9 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - [🔨Building From Source](#building-from-source)
 - [🤓Fun Facts](#fun-facts)
 - [📐Schematics and PCB Layouts](#schematics-and-pcb-layouts)
+- [🗺️Memory Layout](#memory-layout)
 - [🚧Future Enhancements](#future-enhancements)
+- [❓FAQ](#faq)
 - [📜License](#license)
 - [🤝Contributing](#contributing)
 
@@ -273,11 +275,19 @@ In "Programming the PET/CBM", author Raeto states that the 2040 is difficult to 
 
 ## 📐Schematics and PCB Layouts
 
-See [zimmers.net](http://www.zimmers.net/anonftp/pub/cbm/schematics/drives/old/index.html) for schematics and layout diagrams.
+See [📐Schematics and PCB Layouts](./docs/schematics/README.md) for Commdore IEEE-488 schematics and PCB layout diagrams.
 
-The 4040 PCB layout is reproduced here to aid with identifying the components this README references:
+The 4040 PCB layout is reproduced here to aid with identifying the components this document references:
 
-![4040 PCB Layout](./images/4040_layout.png "4040 PCB Layout")
+![4040 PCB Layout](./docs/schematics/4040-320806-digital-layout.png "4040 PCB Layout")
+
+## Memory Layout
+
+See [🗺️Memory Layout](./docs/technical/4040-memory-layout.md) for a detailed memory layout of the 6502 and 6504 processors, including the address space and the components which are mapped to each address.
+
+## Frequently Asked Questions
+
+See [❓FAQ](./FAQ.md) for a list of frequently asked questions.
 
 ## 🚧Future Enhancements
 

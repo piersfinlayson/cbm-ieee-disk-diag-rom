@@ -103,7 +103,7 @@ zp_test:
     STA ZP,X
     CPX #$00        ; Check if we've done all zero page locations
     BNE @test       ; Loop until all zero page locations are verified
-    JMP @done       ; We're done
+    BEQ @done       ; We're done
 @error:
     CPX #$80         ; Test if the upper zero page (UE1 failed)
     BCS zp_error    ; It did, jump to final error handler - we won't do any
@@ -234,7 +234,7 @@ zp_error:
     BNE @y_loop ; 3/2 cycles
     DEX         ; 2 cycles - if X is 0, it will wrap to 255 before the branch
     BNE @x_loop ; 3/2 cycles
-    JMP @toggle_leds    ; We're done - jump back to toggle LEDs
+    BEQ @toggle_leds    ; We're done - jump back to toggle LEDs
 
 ; Our diagnostics routine is now done, so we go through and report:
 ; - any errors
@@ -677,7 +677,36 @@ control_6504:
     JSR blink           ; Blink twice
     JSR blink
 
-    ; Now attempt to take the 6504 over
+    ; Next, try to talk to the 6504.  This will send it a bump job, which should
+    ; spin the motor on one of the drive units up.  This in turn should make the
+    ; 6504 allow us to execute some code on it, which will will use to take it
+    ; over.
+    LDA #$00            ; Try to bump drive 0
+    JSR init_6504
+    BEQ @takeover       ; Success - now try to take the 6504 over
+
+    ; Takeover using drive 0 failed.  Try drive 1
+
+    ; Let's temporarily flash the drive LED to indicate the 6504 error from
+    ; bumping drive 0
+    LDY #DR0_LED
+    LDX #$20            ; flash delay
+    JSR flash_led_error
+    LDX #$00
+    JSR delay
+
+    ; Bump drive 1
+    LDA #$01            ; Try to bump drive 1
+    JSR init_6504
+    BEQ @takeover1      ; Success - now try to take the 6504 over using drive 1
+
+    ; Failed with drive 1 as well
+    BNE @failed         ; BNE uses 1 fewer byte than JMP 
+
+@takeover1:
+    LDA #$01            ; Takeover using drive 1
+@takeover:
+    ; A is now set to 0 (if drive 0 worked), or 1 (if drive 1 worked)
     JSR takeover_6504
 
     ; Check if the 6504 has paused - takeover returns A = $00 if it has, $01 if
@@ -685,8 +714,17 @@ control_6504:
     ; we don't need to test it - test the Z flag directly instead.
     BEQ @done
 
+@failed:
 ; Didn't succeed in taking over 6504 - so update the result bit (which should
 ; be zero due to zero page test leaving zero page zeroed out)
+
+    ; Let's temporarily flash the both drive LEDs to indicate the 6504 error
+    LDY #DR01_LEDS
+    LDX #$20            ; flash delay
+    JSR flash_led_error
+    LDX #$00
+    JSR delay
+
     ORA RESULT_6504     ; Mark takeover as failed
     STA RESULT_6504
 
@@ -861,15 +899,8 @@ empty_handler:
 ; Returns with A = $00 if the 6504 has paused, $01 if it has not responded.
 ; Also returns Z flag set if the 6504 has paused.
 takeover_6504:
-    LDX #STATUS_6504_NONE
-    STX STATUS_6504             ; Set the status to none
-    .assert CMD_NONE = STATUS_6504_NONE, error, "CMD_NONE != STATUS_NONE"
-    STX CMD1              ; Set both commands to none
-    STX CMD2
     JSR copy_6504_cmd           ; Copy the 6504 control routine to shared RAM
     JSR exec_6504_job           ; Trigger the 6504 to execute this routine
-    LDX #STATUS_6504_RUNNING    ; Wait for it to start running our routine
-    JSR wait_6504_status        ; Must be last thing to set Z flag
     RTS
 
 ; Copy the 6504 cmd to the shared RAM, at $1100, which is job 0.
@@ -946,14 +977,65 @@ wait_6504_status:
     LDA #$01            ; Failure
     RTS                 ; Return
 
+; init_6504
+;
+; Initializes communications with the 6504 but bumping drive 0
+;
+; Input A = 0 bump drive 0, A = 1 bump drive 1
+;
+; Destroys X and Y
+;
+; Returns A = 0 on success, 1 on timeout, 2 and above on some other failure
+init_6504:
+    ORA #(JOB_BUMP | $80)   ; Bump command, or with desired drive
+    STA JOB_0_SLOT          ; Store it in slot 0
+    LDY #$00                ; Set Y to 0, to loop around 256 times
+@loop:
+    LDX #$01                ; Set delay to 1/256th second
+    JSR delay               ; Pause
+    LDX JOB_0_SLOT          ; Read the status byte
+
+    ; If the job was executed, the 6504 changes the contents of the job
+    ; slot, and sets 1 on success, or $02-$0B otherwise.  All of them clear
+    ; the MSB - hence testing for positive.
+    BPL @state_change       ; Check if the 6504 is in the desired state
+    
+    ; No change in job state
+    DEY                     ; Decrement Y
+    BNE @loop               ; Still going
+    BEQ @timeout            ; If we timed out, fail
+@state_change:
+    CPX #01                 ; Check if the 6504 is in the desired state
+    BEQ @success            ; $01 is a successful response from bump
+    TXA                     ; Failure codes are 2 and above - return it
+    RTS
+@timeout:
+    LDA #$01                ; Failure
+    RTS
+@success:
+    LDA #$00                ; Success
+    RTS
+
 ; Starts the 6504 job to execute code, using job 0, and assumes code is already
 ; loaded to appropriate address, 6502:$1100, 6504:$500.
 ;
-; Overwrites A.
+; Overwrites X and Y.
+;
+; Returns A = $00 if successfully executed the job $01 otherwise.
 exec_6504_job:
-    LDA #(JOB_EXEC | $80)       ; Set up the command to start the job, of type
-                                ; execute, with MSB set
-    STA JOB_0_SLOT              ; Store in job slot 0
+    ; Set shared status location state, and clear shared command locations
+    LDX #STATUS_6504_NONE
+    STX STATUS_6504             ; Set the status to none
+    .assert CMD_NONE = STATUS_6504_NONE, error, "CMD_NONE != STATUS_NONE"
+    STX CMD1              ; Set both commands to none
+    STX CMD2
+
+    ; Send the execute command 
+    LDA #(JOB_EXEC | $80)   ; Send execute command
+    STA JOB_0_SLOT          ; Store in job slot 0
+
+    LDX #STATUS_6504_RUNNING
+    JSR wait_6504_status
     RTS                         ; Return
 
 ; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
