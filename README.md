@@ -2,6 +2,8 @@
 
 🛠️ A diagnostic ROM for Commodore 2040, 3040, and 4040 disk drives which use the IEEE-488 interface.
 
+Got a question?  See the [FAQ](./FAQ.md).
+
 ## 📖Overview
 
 This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, and 4040). It performs memory and other tests and provides visual feedback through the drive's LEDs.
