@@ -12,7 +12,7 @@ CPU_6502 = 1
 ; Version numbers
 MAJOR_VERSION = $00
 MINOR_VERSION = $01
-PATCH_VERSION = $02
+PATCH_VERSION = $03
 RESERVED = $00
 
 ; Constants

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Speed up RAM tests by removing debug delay
+
 ## 0.1.2
 
 Substantial rewrite, including:
