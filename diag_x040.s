@@ -419,16 +419,6 @@ test_ram_table:
     STY RP1+1           ; Store high byte of table address
     LDY #$00            ; Initialize index into page table
 @loop:
-
-
-
-
-    ; extra delay
-    LDX #$80
-    JSR delay
-
-
-
     LDA (RP1),Y         ; Load page number to test from table
     BMI @last_page      ; If high bit is set, this is the last page
     JSR test_ram_page   ; Test this page
