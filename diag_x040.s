@@ -44,15 +44,23 @@ CopyrightString: .asciiz "(c) 2025 Piers Finlayson"
 RepoString: .asciiz "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
 
 ; Pages to test in our first RAM test
-RamTest1:
+RamTest0:
     .byte $11, $12, $13
     .byte $20, $21, $22, $23
     .byte $30, $31, $32, $33
     .byte $40, $41, $42, ($43 | $80)
 
 ; Pages to test in our second RAM test
-RamTest2:
+RamTest1:
     .byte ($10 | $80)
+
+; Pointers to the pages to test for each test
+RamTests:
+    .word RamTest0, RamTest1
+
+; Mask to TESTS_6502 for the RAM tests
+RamTestMask:
+    .byte TEST_RAM0, TEST_RAM1
 
 ; Map low nibble of page number to LEDs to light
 RamTestLedPattern:
@@ -162,7 +170,9 @@ with_stack_main:
 
     JSR between_tests
 
-    JSR test_ram_table_1:
+    ; First RAM test
+    LDA #$00
+    JSR ram_test
 
     JSR between_tests
 
@@ -180,7 +190,8 @@ with_stack_main:
     JSR between_tests
 
 @6504_failed:
-    JSR test_ram_table_2
+    LDA #$01
+    JSR ram_test
 
     JSR between_tests
 
@@ -264,7 +275,7 @@ finished:
     JSR report_6504     ; Report 6504 errors, if any
     JSR report_drives   ; Report drive test errors, if any
     JSR report_dev_id   ; Report the device ID, if we have it
-    JMP finished        ; Restart sequence
+    JMP finished        ; Go around again
 
 ; Report any zero page error(s)
 ;
@@ -312,7 +323,7 @@ report_zp:
 ; Destroys A, X and Y
 report_ram:
     LDA TESTS_6502      ; Load the tests performed to A
-    AND #(TEST_RAM1 | TEST_RAM2)    ; Check if either RAM test 1 or 2 took place
+    AND #(TEST_RAM0 | TEST_RAM1)    ; Check if either RAM test 1 or 2 took place
     BEQ @done           ; If not, skip to next check
 
     ; One or both of the RAM tests happened - use RESULT_RAM_TEST to report
@@ -405,56 +416,10 @@ report_6504:
 @done:
     RTS
 
-; Report any drive error(s)
+; Report any drive error(s) - no-op for now
 ;
-; Uses RESULT_DRIVE0 and RESULT_DRIVE1 (set by the drive tests)
-;
-; Destroys A, X and Y
+; Will uses RESULT_DRIVE0 and RESULT_DRIVE1 (set by the drive tests)
 report_drives:
-    LDA TESTS_6502      ; Load the tests performed to A
-    AND #TEST_DRIVES    ; Check if drive test was performed
-    BEQ @done           ; If not, skip to next check
-
-    LDA RESULT_DRIVE0   ; Load the result of the drive test
-    BEQ @drive1_check   ; If not, skip to next check
-    
-    ; Drive 0 test failed - report it by flashing all LEDs 8 times
-    LDA #$08            ; Flash 8 times for drive 0 error
-    LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show drive 0 error
-    LDX #$40            ; Set flash delay to 1/4 second
-    JSR flash_led_error ; Flash the LED the number of times indicated by the
-                        ; result
-    JSR between_reports ; pause for 1s with all LEDs off
-
-    ; And now flash drive 0 LED the number of times indicated by the result
-    LDA RESULT_DRIVE0   ; Load the result of the drive test
-    LDY #DR0_LED        ; Flash 5 times for drive 0 error
-    LDX #$40            ; Set flash delay to 1/4 second
-    JSR flash_led_error ; Flash the LED the number of times indicated by the
-                        ; result
-    JSR between_reports ; pause for 1s with all LEDs off
-
-@drive1_check:
-    LDA RESULT_DRIVE1   ; Load the result of the drive test
-    BEQ @done           ; If not, skip to next check
-
-    ; Drive 1 test failed - report it by flashing all LEDs 8 times
-    LDA #$08            ; Flash 8 times for drive 1 error
-    LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show drive 1 error
-    LDX #$40            ; Set flash delay to 1/4 second
-    JSR flash_led_error ; Flash the LED the number of times indicated by the
-                        ; result
-    JSR between_reports ; pause for 1s with all LEDs off
-
-    ; And now flash drive 1 LED the number of times indicated by the result
-    LDA RESULT_DRIVE1   ; Load the result of the drive test
-    LDY #DR1_LED        ; Flash 5 times for drive 1 error
-    LDX #$40            ; Set flash delay to 1/4 second
-    JSR flash_led_error ; Flash the LED the number of times indicated by the
-                        ; result
-    JSR between_reports ; pause for 1s with all LEDs off
-
-@done:
     RTS
 
 ; Report the device ID
@@ -481,39 +446,41 @@ report_dev_id:
     JSR between_reports ; pause for 1s with all LEDs off
     RTS
 
-; Run first RAM test - this tests all static RAM expect that which the 6504
-; might be accessing ($1000-$10FF).
-test_ram_table_1:
-    LDX #<RamTest1          ; Load low byte of test table address
-    LDY #>RamTest1          ; Load high byte of test table address
-    JSR test_ram_table      ; Call routine to test the RAM
-    LDA #TEST_RAM1          ; Mark this test as having been performed
-    ORA TESTS_6502
-    STA TESTS_6502          ; Store result in zero page
-
-    JSR check_ram_result    ; Check we can continue - won't return if not
-
-    RTS
-
-; Run the second RAM test - this tests $1000-$10FF, which is used by the stock
-; 6504 ROM from start of day, now we've tested the 6504, and attempted to take
-; control of it.  If we failed in either case it's likely the 6504 isn't
-; running anyway, so overwriting the shared RAM isn't an issue.
+; Run one of the static RAM tests
 ;
-; After this, reset the shared RAM back to how it would have been
-test_ram_table_2:
-    LDX #<RamTest2          ; Load low byte of test table address
-    LDY #>RamTest2          ; Load high byte of test table address
+; A = which RAM test to perform - 0 or 1
+;
+; If A = 1 will reset_shared_ram afterwards
+ram_test:
+    PHA                     ; Preserve A on stack
+    
+    ; Calculate the offset in the RamTests table
+    ASL A                   ; Multiply by 2 (for word-sized entries)
+    TAY                     ; Use Y as index
+
+    ; Load the address of the RAM test table
+    LDA RamTests,Y          ; Load low byte of the address
+    TAX                     ; Transfer to X for test_ram_table
+    LDA RamTests+1,Y        ; Load high byte of the address
+    TAY                     ; Transfer to Y for test_ram_table
+
     JSR test_ram_table      ; Call routine to test the RAM
-    LDA #TEST_RAM2          ; Mark this test as having been performed
-    ORA TESTS_6502
+    
+    PLA                     ; Pull original A value from stack
+    TAX                     ; Transfer to X for indexing
+
+    ; Set the appropriate test flag
+    LDA RamTestMask,X       ; Load the appropriate test mask
+    ORA TESTS_6502          ; OR it with the current test flags
     STA TESTS_6502          ; Store result in zero page
-
+    
     JSR check_ram_result    ; Check we can continue - won't return if not
-
-    JSR reset_shared_ram    ; This RAM test has changed some of the shared RAM
-                            ; used by our 6504 routine.  So set it back
-
+    
+    ; If doing second RAM test (A=1), reset shared RAM
+    CPX #1
+    BNE done
+    JSR reset_shared_ram    ; Reset shared RAM if X = 1
+done:
     RTS
 
 ; Routine to tests a table of RAM pages.
@@ -968,8 +935,8 @@ delay:
     BNE @y_loop     ; 3/2 cycles
     DEX             ; 2 cycles
     BNE @x_loop     ; 3/2 cycles
-    LDX DX      ; Restore X register
-    LDY DY      ; Restore Y register
+    LDX DX          ; Restore X register
+    LDY DY          ; Restore Y register
     RTS             ; 6 cycles
 
 ; Our no-op interrupt handler

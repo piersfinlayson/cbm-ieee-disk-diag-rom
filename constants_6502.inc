@@ -32,8 +32,8 @@ DIAG_START_BYTE = $55
 ; this is the order finished: goes through them reporting any errors and other
 ; results.
 TEST_ZP = $01
-TEST_RAM1 = $02
-TEST_RAM2 = $04
+TEST_RAM0 = $02
+TEST_RAM1 = $04
 TEST_6504_BOOT = $08
 TEST_6504_TO = $10
 TEST_DRIVES = $20
