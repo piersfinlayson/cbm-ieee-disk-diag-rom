@@ -3,6 +3,7 @@
 ## 📋 Questions
 - [🔍General Questions](#general-questions)
     - [❓What is the purpose of this diagnostic ROM?](#what-is-the-purpose-of-this-diagnostic-rom)
+    - [❓What does it test?](#what-does-it-test)
     - [❓How does it differ from Commodore's original diagnostic tools?](#how-does-it-differ-from-commodores-original-diagnostic-tools)
     - [❓Can I damage my drive by using this ROM?](#can-i-damage-my-drive-by-using-this-rom)
 - [💾Installation Questions](#installation-questions)
@@ -35,6 +36,28 @@
 
 The diagnostic ROM helps identify hardware issues in Commodore 2040/3040/4040 disk drives by performing memory and other tests and providing visual feedback through the drive's LEDs.
 
+### ❓What does it test?
+
+This diagnostic ROM directly tests:
+- the primary 6502 CPU (UN1)
+- the secondary 6504 CPU (UH3)
+- the 2114 static RAM chips (UC4/UC5/UD4/UD5/UE4/UE5/UF4/UF5)
+- the 6532 RIOT chips (UC1/UE1)
+- the error, drive 0 and drive 1 LEDs
+
+And also, indirectly:
+- the 6530 RRIOT chip (6530UK3)
+- the bus multiplexors (74LS157s at UC3/UD3/UE3/UF3)
+- the CPU address line decoders (74LS42s at UA3 and UA1)
+- the reset circuit
+- various other logic chips, including:
+    - 74LS04 UA1 (not populated on the 2040, cleans up clock signals)
+    - 74LS04 UL2 (part of reset cicuit)
+    - 7406 UN2 (inverts LED outputs and part of reset circuit)
+    - 74S04 UA6 (part of the circuit producing clock signals from oscillator)
+    - 74LS193 UB6 (part of the circuit producing clock signals from oscillator)
+    - 7414 UA4 (part of reset circuit)
+
 ### ❓How does it differ from Commodore's original diagnostic tools?
 
 If you have a copy of the official Commodore diagnostics ROM, please [share it](mailto:piers@piers.rocks)!
@@ -47,7 +70,15 @@ This project:
 
 ### ❓Can I damage my drive by using this ROM?
 
-Per the [LICENSE](./LICENSE), this ROM is provided "as is" without warranty. However, the ROM itself is designed to be non-destructive and should not cause any permanent damage to your drive.  
+Per the [LICENSE](./LICENSE), this ROM is provided "as is" without warranty. However, the ROM itself is designed to be non-destructive and should not cause any permanent damage to your drive.
+
+To avoid damage to your drive follow these precautions:
+- Always wear a grounded anti-static wrist strap when handling the drive or any components, whether it's powered on or not.
+- Ensure the drive is powered off and unplugged before installing or removing any components.
+- Avoid shorting any pins or traces on the PCB.
+- Be careful when inserting or removing ROMs or other components to avoid bending pins or damaging the socket.
+- If desoldering components, never apply excessive heat to the PCB or components. Use a desoldering pump or wick to remove solder without damaging the PCB and use as low temperatures as possible.
+- Ensure the (E)EPROM you use for the diagnostics ROM is compatible with the drive's stock ROM pinout (2332) and supports/provides the required voltage (5V).
 
 ## 💾Installation Questions
 

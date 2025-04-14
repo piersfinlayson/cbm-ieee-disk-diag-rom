@@ -1,0 +1,845 @@
+; This source code is a disaseembly of a Commodore 2040/3040/4040 disk drive
+; 6504 ROM (located in the 6530 UK3).
+; 
+; The code is Copyright (c) Commodore Business Machines, Inc.
+;
+; The comments are Copyright (c) 2025 Piers Finlayson.
+
+;===============================================================================
+; COMMODORE DISK DRIVE CONTROLLER - SYSTEM OVERVIEW
+;===============================================================================
+; This 6502-based disk controller implements a sophisticated job scheduling and
+; execution system that optimizes head movement, manages motor timing, and
+; handles various disk operations efficiently.
+;
+; SYSTEM ARCHITECTURE:
+; -------------------
+; 1. JOB SCHEDULING SYSTEM
+;    - Jobs are stored in a priority queue (higher job numbers = higher priority)
+;    - Each job has flags indicating type, status, and target drive/track
+;    - The system optimizes for minimal head movement between operations
+;    - Special priority is given to any job when the drive head is at track 0
+;
+; 2. MOTOR CONTROL SUBSYSTEM
+;    - Motors are initialized off, although track bit is set
+;    - Tracks motor status for each drive (on/off, up-to-speed)
+;    - Manages spin-up timing to ensure proper operation
+;    - Only proceeds with operations when motor is at proper speed
+;
+; 3. HEAD POSITIONING SYSTEM
+;    - Uses stepper motor with half-track increments (2 steps per track)
+;    - Implements seek optimization to minimize mechanical movement
+;    - Supports physical recalibration via "bump" operation to track 0
+;    - Tracks current position and computes optimal path to target tracks
+;
+; 4. ZONE-BASED DISK FORMAT
+;    - Divides disk into zones with different sector counts and densities
+;    - Optimizes storage by using more sectors on outer tracks
+;    - Configures appropriate bit density for each zone
+;
+; 5. JOB DISPATCH MECHANISM
+;    - Supports multiple operation types:
+;      * EXECUTE (type $60): Read/write operations via dispatch table
+;      * BUMP (type $40): Recalibration to track 0
+;      * SEEK: Standard track positioning
+;    - Uses indirect jump table for efficient command dispatching
+;
+; EXECUTION FLOW:
+; --------------
+; 1. Scan job queue in priority order
+; 2. For active jobs, check/start the appropriate drive motor
+; 3. Wait for motor to reach proper speed
+; 4. Ensure drive head is not currently moving
+; 5. If at track 0, process highest priority job immediately
+; 6. Otherwise, find job requiring minimum head movement
+; 7. Position head to target track (or recalibrate if needed)
+; 8. Configure proper zone parameters (sectors/track, density)
+; 9. Dispatch to appropriate handler based on job type
+;
+;===============================================================================
+
+;===============================================================================
+; FIRST JOB EXECUTION SEQUENCE (COLD START) - EXECUTE job
+;===============================================================================
+; Sequence when job 0 is the first job received with MSB set as an EXECUTE job:
+;
+; 1. JOB DETECTION
+;    - System scans jobs from 14 down to 0
+;    - At job 0, MSB is set, recognizes active job
+;    - Extracts drive number (0) and stores in DRIVE
+;
+; 2. MOTOR ACTIVATION
+;    - Checks VIA port B (motor is off from initialization)
+;    - Toggles appropriate motor control bit
+;    - Sets target ready time = current time + 50 ticks
+;    - Does not wait for actual physical spin-up
+;
+; 3. DRIVE STATUS PROCESSING
+;    - Checks DRVST[0] = $80 (from initialization)
+;    - Bit 7 (motor ready) already set, skips wait loop
+;    - Bit 6 (head moving) is clear, proceeds immediately
+;
+; 4. POSITION ASSESSMENT
+;    - Reads current track value (0 from initialization)
+;    - Since track = 0, branches directly to GOTU
+;    - No head movement or position verification occurs
+;
+; 5. JOB EXECUTION
+;    - Identifies job type as EXECUTE ($60)
+;    - Calculates handler address: $0500 (job 0 + offset 5)
+;    - Jumps to handler without waiting for physical readiness
+;
+; The system prioritizes immediate execution when:
+; - Track is reported as 0 (even if not physically verified)
+; - Motor ready bit is set (even if motor was just turned on)
+;===============================================================================
+
+; *** Symbol table  follows ***
+ CLOCK      =$0000
+ MTRTM      =$0001
+ DRVST      =$0003
+ STEPS      =$0005
+ COW        =$0007
+ WORK       =$0008
+ DTRCK      =$000A
+ DSECT      =$000B
+ CSECT      =$000C
+ STAB       =$000D
+ DRIVE      =$0012
+ TRACK      =$0013
+ NEXTS      =$0014
+ SECTR      =$0015
+ BUFPT      =$0016
+ HDRPNT     =$0018
+ FTNUM      =$001A
+ IP         =$001B
+ IOB        =$001E
+ JOBNUM     =$001F
+ VIA_VB     =$0040  ; VIA output register B
+ VIA_DIN    =$0041  ; VIA output register A
+ VIA_VDDRB  =$0042  ; VIA data direction register B
+ VIA_T1LL   =$0044  ; VIA Write Latch (+ read counter)
+ VIA_TIMER  =$0045
+ VIA_ACR    =$004B  ; VIA Auxiliary Control Register
+ VIA_PCR    =$004C  ; VIA Peripheral Control Register
+ VIA_IFR    =$004D  ; Interrupt Flag Register
+ VIA_IER    =$004E  ; Interrupt Enable Register
+ RIOT_DOUT  =$0080  ; 6530 RIOT output register
+ RIOT_EOUT  =$0081  ; 6530 RIOT output register
+ RIOT_PB    =$0082
+ RIOT_DDRB  =$0083
+ x8F        =$8F
+ TICK       =$0400
+ DELAY      =$0401
+ CUTMT      =$0402
+ JOBS       =$0403
+ x0412      =$0412
+ i0543      =$0543
+ i104D      =$104D
+
+; *** text follows ***
+
+; Code starts at $FC00.  This is the location of the 6504's ROM.  (In fact, the
+; 6504 doesn't expose A13, A14, and A15 so you could argue it is addressing
+; $1C00, but as you can see, the code references itself at $FC00.)
+ *=$FC00
+
+
+;===============================================================================
+; DISK CONTROLLER INITIALIZATION ROUTINE
+;===============================================================================
+; This routine initializes all hardware components and software variables
+; for the disk control system at power-on or after a reset.
+ FC00  A2 3F     RESET      LDX #$3F      ; Initialize stack pointer to $013F - stack shares zero page, which is limited to 64 bytes
+ FC02  9A                   TXS           ; Transfer X to stack pointer
+ FC03  D8                   CLD           ; Clear decimal mode (ensure binary arithmetic)
+ 
+ ; I/O CHIP CONFIGURATION
+ FC04  A2 FF                LDX #$FF      ; Load $FF (all bits set)
+ FC06  86 42                STX VIA_VDDRB ; Configure VIA port B pins as outputs
+ FC08  8E 02 04             STX CUTMT     ; Initialize shared buffer value
+ FC0B  A9 07                LDA #$07      ; Pattern: %00000111
+ FC0D  85 83                STA RIOT_DDRB ; Set RIOT PB0-2 as outputs for drive select lines
+ FC0F  86 1B                STX IP        ; Set internal pointer to $FF
+ FC11  A9 FC                LDA #$FC      ; Pattern: %11111100
+ FC13  85 4C                STA VIA_PCR   ; Configure VIA peripheral control register
+ FC15  86 40                STX VIA_VB    ; Set all VIA port B lines high (motors OFF)
+ 
+ ; INTERRUPT AND TIMER SETUP
+ FC17  A9 92                LDA #$92      ; Pattern: %10010010 (enable specific interrupts)
+ FC19  85 4E                STA VIA_IER   ; Set VIA interrupt enable register
+ FC1B  A9 01                LDA #$01      ; Set timer mode
+ FC1D  85 4B                STA VIA_ACR   ; Configure VIA auxiliary control register
+ FC1F  4A                   LSR           ; Shift right, A = 0
+ FC20  85 44                STA VIA_T1LL  ; Clear VIA timer 1 low-order latch
+ 
+ ; INITIALIZE KEY VARIABLES
+ FC22  85 16                STA BUFPT     ; Initialize buffer pointer low byte to 0
+                                          ; (Important for indirect jump table operation)
+ FC24  85 1E                STA IOB       ; Clear I/O buffer
+ 
+ ; CLEAR JOB AND STEP TABLES
+ FC26  A0 0E                LDY #$0E      ; Set Y=14 (highest job number)
+ FC28  99 03 04  iFC28      STA JOBS,Y    ; Clear job status entry (all jobs inactive)
+ FC2B  99 05 00             STA STEPS,Y   ; Clear step counter entry
+ FC2E  88                   DEY           ; Decrement index
+ FC2F  10 F7                BPL iFC28     ; Loop until all 15 entries cleared (Y=14 down to 0)
+ 
+ ; SYSTEM TIMERS AND STATUS
+ FC31  A9 0F                LDA #$0F      ; Value 15 
+ FC33  8D 00 04             STA TICK      ; Initialize system tick counter
+ FC36  85 8F                STA x8F       ; Set controller status byte
+ 
+ ; INITIALIZE DRIVE STATUS
+ FC38  A9 80                LDA #$80      ; Pattern: %10000000 (motor "ready" bit)
+ FC3A  85 03                STA DRVST     ; Initialize drive 0 status 
+ FC3C  85 04                STA DRVST+1   ; Initialize drive 1 status
+ 
+ ; SYSTEM TIMING PARAMETERS
+ FC3E  A9 32                LDA #$32      ; Value 50 (decimal)
+ FC40  8D 01 04             STA DELAY     ; Set motor spin-up delay time
+ 
+ ; BUFFER POINTERS
+ FC43  A9 04                LDA #$04      ; Value 4 (page number)
+ FC45  85 19                STA HDRPNT+1  ; Set high byte of header buffer pointer
+
+
+;===============================================================================
+; JOB SCANNING LOOP ENTRY POINT
+;===============================================================================
+; Checks for pending jobs and manages disk motor control
+ FC47  A0 0E     START      LDY #$0E       ; Initialize with 14 possible jobs (highest priority first)
+ FC49  58        L010       CLI            ; Enable interrupts during scanning
+ FC4A  B9 03 04             LDA JOBS,Y     ; Load job status byte from table
+ FC4D  10 28                BPL iFC77      ; If MSB not set (not active job), skip to next job
+ FC4F  29 01                AND #$01       ; Extract drive number (bit 0)
+ FC51  AA                   TAX            ; Transfer to X register (X = drive 0 or 1)
+ FC52  85 12                STA DRIVE      ; Store current drive number in memory
+ FC54  78                   SEI            ; Disable interrupts for hardware control
+
+;===============================================================================
+; MOTOR CONTROL SEQUENCE
+;===============================================================================
+; Turn on motor if not already running and set up spin-up delay
+ FC55  A5 40                LDA VIA_VB     ; Get current motor control bits
+ FC57  3D ED FF             AND ANDC,X     ; Test if motor is already on for this drive
+ FC5A  F0 0E                BEQ iFC6A      ; If motor already on, skip to next check
+ FC5C  A5 40                LDA VIA_VB     ; Reload motor control bits
+ FC5E  5D EF FF             EOR ANDE,X     ; Toggle motor bit for this drive
+ FC61  85 40                STA VIA_VB     ; Update hardware motor control
+ FC63  A5 00                LDA CLOCK      ; Get current system time
+ FC65  6D 01 04             ADC DELAY      ; Add motor spin-up delay value
+ FC68  95 01                STA MTRTM,X    ; Store target time when motor should be up to speed
+
+;===============================================================================
+; DRIVE STATUS CHECK
+;===============================================================================
+; Checks if the motor is at speed, and if the head is stationary
+; before proceeding to job selection
+
+ FC6A  B5 03     iFC6A      LDA DRVST,X    ; Get drive status byte for current drive
+ FC6C  30 06                BMI iFC74      ; If bit 7 set (motor at speed), skip ahead
+ FC6E  A5 00                LDA CLOCK      ; Get current system time
+ FC70  95 01                STA MTRTM,X    ; Update motor spin-up target time
+ FC72  B5 03                LDA DRVST,X    ; Reload drive status
+ FC74  0A        iFC74      ASL            ; Shift left to check bit 6 (head moving flag)
+ FC75  10 05                BPL QUE        ; If bit 6 clear (head NOT moving), go to QUE
+
+ ; JOB LOOP CONTROL
+ FC77  88        iFC77      DEY            ; Decrement job counter
+ FC78  10 CF                BPL L010       ; If more jobs to check, loop back
+ FC7A  D0 CB     END        BNE START      ; Always branch back to START
+
+;===============================================================================
+; DISK HEAD POSITIONING ALGORITHM
+;===============================================================================
+; This routine selects the next disk operation to perform based on minimizing
+; head movement. It scans through all pending jobs, identifies the one requiring
+; the least head movement from current position, and initiates that movement.
+; However, if the drive is currently at track 0, this routine will
+; prioritise the highest priority pending job first (highest job number
+; with MSB set).
+; x=drive#, y=job#
+
+ FC7C  58        QUE        CLI            ; Enable interrupts for timing-sensitive disk operations
+ FC7D  A9 40                LDA #$40       ; Initialize with maximum possible track distance (64)
+ FC7F  85 08                STA WORK       ; WORK will hold the smallest distance found
+ FC81  A0 0E                LDY #$0E       ; Start with highest priority job (job #14)
+
+;===============================================================================
+; JOB SCANNING LOOP
+;===============================================================================
+; Examine each job in priority order to find the one requiring minimal head movement
+ FC83  B9 03 04  iFC83      LDA JOBS,Y     ; Get job status byte
+ FC86  84 1A                STY FTNUM      ; Store current job number
+ FC88  10 27                BPL iFCB1      ; If job not active (MSB clear), skip to next job
+ FC8A  29 01                AND #$01       ; Extract drive number from job
+ FC8C  C5 12                CMP DRIVE      ; Is this job for our active drive?
+ FC8E  D0 21                BNE iFCB1      ; If not our drive, skip to next job
+ FC90  B5 03                LDA DRVST,X    ; Get current track position from drive state
+ FC92  29 3F                AND #$3F       ; Mask to get just the track number bits (0-63)
+ FC94  85 13                STA TRACK      ; Store current track
+ FC96  F0 41                BEQ GOTU       ; If WE ARE at track 0, jump to GOTU
+ FC98  38                   SEC            ; Prepare for subtraction
+ FC99  F9 12 04             SBC x0412,Y    ; Calculate: current track - target track
+ FC9C  F0 3B                BEQ GOTU       ; If already on target track, jump to GOTU
+ FC9E  85 0A                STA DTRCK      ; Store track distance (positive or negative)
+ FCA0  10 05                BPL iFCA7      ; If distance is positive, skip conversion step
+
+;===============================================================================
+; DISTANCE NORMALIZATION
+;===============================================================================
+; Convert negative distance to positive for magnitude comparison
+ FCA2  18                   CLC            ; Clear carry for ADC operation
+ FCA3  49 FF                EOR #$FF       ; Invert all bits (one's complement)
+ FCA5  69 01                ADC #$01       ; Add 1 to get two's complement (absolute value)
+
+ ; DISTANCE EVALUATION
+ ; Compare this job's distance with the minimum found so far
+ FCA7  C5 08     iFCA7      CMP WORK       ; Compare with smallest distance found so far
+ FCA9  B0 06                BCS iFCB1      ; If distance >= minimum, skip to next job
+ FCAB  85 08                STA WORK       ; Update minimum distance
+ FCAD  A5 0A                LDA DTRCK      ; Get original signed distance 
+ FCAF  85 09                STA WORK+1     ; Store direction (sign of distance) for later
+
+ ; PRIORITY LOOP CONTINUATION
+ FCB1  88        iFCB1      DEY            ; Move to next job (lower priority)
+ FCB2  10 CF                BPL iFC83      ; If more jobs to check, loop back
+
+; PREPARE HEAD MOVEMENT
+ ; After identifying the closest job, set up the head movement
+ FCB4  A5 08                LDA WORK       ; Get absolute distance for closest job
+ FCB6  24 09                BIT WORK+1     ; Check if movement is positive or negative
+ FCB8  30 05                BMI iFCBF      ; If high bit set (negative), skip conversion
+ 
+ ; DIRECTION CONVERSION
+ ; Convert positive distance to negative for step count calculation
+ FCBA  18                   CLC            ; Clear carry for two's complement
+ FCBB  49 FF                EOR #$FF       ; Invert all bits
+ FCBD  69 01                ADC #$01       ; Add 1 to complete two's complement
+ 
+ ; FINALIZE MOVEMENT
+ FCBF  85 08     iFCBF      STA WORK       ; Store signed step count
+ FCC1  0A                   ASL            ; Double it (suspect this is because the stepper motor moves the head half a track at a time)
+ FCC2  78                   SEI            ; Disable interrupts during critical head movement
+ FCC3  95 05                STA STEPS,X    ; Store step count for this drive
+ FCC5  A9 40                LDA #$40       ; Load stepping mode bit
+ FCC7  15 03                ORA DRVST,X    ; Set stepping bit in drive state
+ FCC9  18                   CLC            ; Clear carry for addition
+ FCCA  65 08                ADC WORK       ; Add signed step count to update target track
+ FCCC  95 03                STA DRVST,X    ; Update drive state with new track target
+ FCCE  D0 AA     FIN        BNE END        ; Branch to end routine (always taken unless track = 0)
+
+; sectors/tracks table: .byt 17,18,20,21
+ FCD0  TAB1       .byte $11, $12, $14, $15                      ;qrtu
+
+; .byt $f3
+ FCD4  ANDA       .byte $F3                                     ;.
+
+; TAB3+1 = tracks: .byt $fc, 31, 25,18
+; *** Invalid reference FCD5 ignored.
+ FCD5  TAB3       .byte $FC, $1F, $19, $12                      ;._yr
+
+; GOTU - DISK FORMAT ZONE CONFIGURATION
+; When head is at the correct track, this routine:
+; 1. Determines which disk zone we're in (tracks are divided into zones)
+; 2. Sets appropriate sectors-per-track and bit density for that zone
+; 3. Configures hardware registers for data read/write operations
+
+ FCD9  B5 03     GOTU       LDA DRVST,X    ; Load current drive state
+ FCDB  30 F1                BMI FIN        ; If drive is busy (bit 7 set), exit routine
+ FCDD  A2 04                LDX #$04       ; Initialize zone counter (4 zones on disk)
+ FCDF  B9 12 04             LDA x0412,Y    ; Load target track number
+ 
+ ; ZONE DETERMINATION LOOP
+ ; Tracks are divided into zones with different densities and sector counts
+ ; Outer tracks (lower numbers) have more sectors than inner tracks
+ FCE2  DD D4 FC  L032       CMP ANDA,X     ; Compare track with zone boundary value
+ FCE5  CA                   DEX            ; Move to next zone boundary
+ FCE6  B0 FA                BCS L032       ; If track >= boundary, continue checking
+ 
+ ; CONFIGURE DISK FORMAT PARAMETERS
+ ; Once zone is determined, set appropriate parameters
+ FCE8  BD D0 FC             LDA TAB1,X     ; Get number of sectors per track for this zone
+ FCEB  85 15                STA SECTR      ; Store sector count
+ FCED  8A                   TXA            ; Transfer zone number to A
+ FCEE  0A                   ASL            ; Convert to bit density control value (x2)
+ FCEF  85 08                STA WORK       ; Store bit density setting
+ 
+ ; CONFIGURE HARDWARE CONTROL REGISTER
+ FCF1  A5 82                LDA RIOT_PB    ; Load RIOT peripheral control register
+ FCF3  29 F8                AND #$F8       ; Clear lower 3 bits (density and drive select)
+ FCF5  05 08                ORA WORK       ; Set proper bit density for this zone
+ FCF7  05 12                ORA DRIVE      ; Set drive select bits
+ FCF9  85 82                STA RIOT_PB    ; Update hardware control register
+ 
+ ; PREPARE FOR JOB EXECUTION
+ FCFB  A6 12                LDX DRIVE      ; Restore X to current drive number
+ FCFD  B9 03 04             LDA JOBS,Y     ; Load job descriptor again
+ FD00  29 70                AND #$70       ; Isolate job type bits (read/write/verify etc.)
+
+; JOB EXECUTION DISPATCHER
+; After positioning the head and configuring disk format parameters,
+; this routine determines what operation to perform based on job type bits.
+; Three possible operations: Execute, Bump, or Seek.
+
+ FD02  C9 60     EXE        CMP #$60       ; Is this an EXECUTE job? ($60 = %01100000)
+ FD04  F0 07                BEQ EX         ; If yes, branch to execute handler
+ FD06  C9 40                CMP #$40       ; Is this a BUMP job? ($40 = %01000000)
+ FD08  F0 0C                BEQ BUMP       ; If yes, branch to bump handler
+ FD0A  4C 65 FE             JMP SEEK       ; Otherwise go to SEEK routine (default handler)
+
+ ; EXECUTE JOB HANDLER
+ ; Dispatch mechanism: Uses job number to determine which routine to call
+ ; by calculating an indirect jump address based on job number.
+ ; As BUFPT is initialized to 0 and doesn't change, this means that the
+ ; address JMPed to is $0500 + (job number * $100).  So job 0 jumps to
+ ; $0500, job 1 to $0600, etc.
+ FD0D  98        EX         TYA            ; Transfer job number (Y) to accumulator
+ FD0E  18                   CLC            ; Clear carry for addition
+ FD0F  69 05                ADC #$05       ; Add 5 to job number (offset into jump table)
+ FD11  85 17                STA BUFPT+1    ; Store as high byte of jump address
+ FD13  6C 16 00             JMP (BUFPT)    ; Jump indirect to address in BUFPT
+                                          ; This implements a function dispatch table
+
+; BUMP (RECALIBRATION) ROUTINE
+; This routine resets the head position by moving it to track 0
+; using the physical "bump stop" as a reference point
+
+ FD16  78        BUMP       SEI            ; Disable interrupts during critical stepper operation
+ FD17  A9 C1                LDA #$C1       ; Set drive state flags:
+                                          ; Bit 7 = 1: Drive busy
+                                          ; Bit 6 = 1: In recalibration mode
+                                          ; Bit 0 = 1: Initial stepper motor phase
+ FD19  A6 12                LDX DRIVE      ; Load current drive number
+ FD1B  95 03                STA DRVST,X    ; Update drive state
+ 
+ ; CONFIGURE STEPPER MOTOR CONTROL
+ FD1D  A9 0F                LDA #$0F       ; Stepper motor phase mask (%00001111)
+ FD1F  3D EF FF             AND ANDD,X     ; AND with drive-specific mask from table
+ FD22  05 40                ORA VIA_VB     ; Combine with current VIA port settings
+ FD24  85 40                STA VIA_VB     ; Update stepper motor control register
+ 
+ ; SET MAXIMUM STEP COUNT
+ FD26  A9 8C                LDA #$8C       ; Load 140 (256-116) as step count
+                                          ; This large value ensures head hits physical stop
+ FD28  95 05                STA STEPS,X    ; Store in step counter for this drive
+ FD2A  4C C1 FE             JMP DONE       ; Jump to completion routine
+
+ FD2D  A9 FF     WSECT      LDA #$FF       ; decide which sector to service
+ FD2F  85 1A                STA FTNUM     
+ FD31  4A                   LSR           
+ FD32  85 0C                STA CSECT     
+ FD34  A5 10                LDA STAB+3    
+ FD36  18                   CLC           
+ FD37  69 01                ADC #$01      
+ FD39  C5 15                CMP SECTR     
+ FD3B  D0 02                BNE iFD3F     
+ FD3D  A9 00                LDA #$00      
+ FD3F  85 14     iFD3F      STA NEXTS     
+ FD41  A2 0E                LDX #$0E      
+ FD43  BD 03 04  iFD43      LDA JOBS,X     ; check which job type, check track, drive
+ FD46  10 3B                BPL iFD83     
+ FD48  BD 12 04             LDA x0412,X   
+ FD4B  29 3F                AND #$3F      
+ FD4D  C5 13                CMP TRACK     
+ FD4F  D0 32                BNE iFD83     
+ FD51  BD 03 04             LDA JOBS,X    
+ FD54  A8                   TAY           
+ FD55  29 01                AND #$01      
+ FD57  C5 12                CMP DRIVE     
+ FD59  D0 28                BNE iFD83     
+ FD5B  98                   TYA           
+ FD5C  C9 60                CMP #$60      
+ FD5E  F0 23                BEQ iFD83     
+ FD60  8A                   TXA           
+ FD61  20 99 FD             JSR iFD99     
+ FD64  A0 03                LDY #$03      
+ FD66  38                   SEC           
+ FD67  B1 18                LDA (HDRPNT),Y
+ FD69  E5 14                SBC NEXTS     
+ FD6B  10 03                BPL iFD70     
+ FD6D  18                   CLC           
+ FD6E  65 15                ADC SECTR     
+ FD70  85 0B     iFD70      STA DSECT     
+ FD72  38                   SEC           
+ FD73  E5 0C                SBC CSECT     
+ FD75  10 0C                BPL iFD83     
+ FD77  86 1A                STX FTNUM     
+ FD79  A5 0B                LDA DSECT     
+ FD7B  85 0C                STA CSECT     
+ FD7D  8A                   TXA           
+ FD7E  18                   CLC           
+ FD7F  69 05                ADC #$05      
+ FD81  85 17                STA BUFPT+1   
+ FD83  CA        iFD83      DEX           
+ FD84  10 BD                BPL iFD43     
+ FD86  A4 1A                LDY FTNUM     
+ FD88  10 03                BPL HPNT      
+ FD8A  4C 47 FC             JMP START     
+ FD8D  98        HPNT       TYA            ; adjust header pointer: job.8 = hi byte of HDRS into HDRPNT
+ FD8E  20 99 FD             JSR iFD99     
+ FD91  B9 03 04             LDA JOBS,Y    
+ FD94  29 70                AND #$70      
+ FD96  4C AA FD             JMP READ      
+
+ FD99  0A        iFD99      ASL           
+ FD9A  0A                   ASL           
+ FD9B  0A                   ASL           
+ FD9C  69 21                ADC #$21      
+ FD9E  85 18                STA HDRPNT    
+ FDA0  60                   RTS           
+
+ FDA1  A0 03     FSNUM      LDY #$03       ; fix sector number for fake seek
+ FDA3  B1 18                LDA (HDRPNT),Y
+ FDA5  85 10                STA STAB+3    
+ FDA7  4C 2D FD             JMP WSECT     
+
+; Job Routine: read a block: mode =000 (8)
+; check if read or write, branch to WRITE if so
+
+ FDAA  C9 00     READ       CMP #$00      
+ FDAC  D0 28                BNE WRITE     
+ FDAE  20 C3 FD             JSR DSTRT     
+ FDB1  24 4D     iFDB1      BIT VIA_IFR    ; get the bytes, store in (BUFPT),y, update checksum, jmp DEND
+ FDB3  10 FC                BPL iFDB1     
+ FDB5  A5 41                LDA VIA_DIN   
+ FDB7  91 16                STA (BUFPT),Y 
+ FDB9  45 08                EOR WORK      
+ FDBB  85 08                STA WORK      
+ FDBD  C8                   INY           
+ FDBE  D0 F1                BNE iFDB1     
+ FDC0  4C 4E FE             JMP DEND      
+ FDC3  A0 00     DSTRT      LDY #$00       ; start reading data: init checksum, seach for header & start of data
+ FDC5  84 08                STY WORK      
+ FDC7  20 CE FE             JSR SRCH      
+ FDCA  20 3F FF             JSR SYNC      
+ FDCD  C9 07                CMP #$07      
+ FDCF  F0 04                BEQ iFDD5     
+ FDD1  A9 04                LDA #$04      
+ FDD3  D0 0D                BNE iFDE2     
+ FDD5  60        iFDD5      RTS           
+
+; Job Routine: write a block: mode =001 (9)
+; check if verify, branch to VRFY if so
+; check write protect, if ok L198, if no good, ER
+
+ FDD6  C9 20     WRITE      CMP #$20      
+ FDD8  10 60                BPL VRFY      
+ FDDA  A5 82                LDA RIOT_PB   
+ FDDC  29 08                AND #$08      
+ FDDE  F0 04                BEQ L198      
+ FDE0  A9 08                LDA #$08      
+ FDE2  D0 7F     iFDE2      BNE ER        
+ FDE4  A9 10     L198       LDA #$10       ; disable CB1 flag, get correct block
+ FDE6  85 4E                STA VIA_IER   
+ FDE8  20 CE FE             JSR SRCH      
+ FDEB  24 4D     iFDEB      BIT VIA_IFR    ; write sync mode, load fill code
+ FDED  10 FC                BPL iFDEB     
+ FDEF  24 41                BIT VIA_DIN   
+ FDF1  A9 DE                LDA #$DE      
+ FDF3  85 4C                STA VIA_PCR   
+ FDF5  A2 FF                LDX #$FF      
+ FDF7  86 80                STX RIOT_DOUT 
+ FDF9  86 81                STX RIOT_EOUT 
+ FDFB  24 4D     iFDFB      BIT VIA_IFR    ; reset port a flag, set 1st sync
+ FDFD  10 FC                BPL iFDFB     
+ FDFF  24 41                BIT VIA_DIN   
+ FE01  86 80                STX RIOT_DOUT 
+ FE03  A9 DC                LDA #$DC      
+ FE05  24 4D     iFE05      BIT VIA_IFR    ; store normal code mode in PCR, set 2nd sync, chksum
+ FE07  10 FC                BPL iFE05     
+ FE09  24 41                BIT VIA_DIN   
+ FE0B  85 4C                STA VIA_PCR   
+ FE0D  A9 07                LDA #$07      
+ FE0F  85 80                STA RIOT_DOUT 
+ FE11  A0 00                LDY #$00      
+ FE13  84 08                STY WORK      
+ FE15  24 4D     iFE15      BIT VIA_IFR    ; write block, write chksum, change job to verify, end
+ FE17  10 FC                BPL iFE15     
+ FE19  24 41                BIT VIA_DIN   
+ FE1B  B1 16                LDA (BUFPT),Y 
+ FE1D  85 80                STA RIOT_DOUT 
+ FE1F  45 08                EOR WORK      
+ FE21  85 08                STA WORK      
+ FE23  C8                   INY           
+ FE24  D0 EF                BNE iFE15     
+ FE26  AA                   TAX           
+ FE27  20 7C FF             JSR OUT       
+ FE2A  20 59 FF             JSR OFF       
+ FE2D  A4 1A                LDY FTNUM     
+ FE2F  B9 03 04             LDA JOBS,Y    
+ FE32  49 30                EOR #$30      
+ FE34  99 03 04             STA JOBS,Y    
+ FE37  4C A1 FD             JMP FSNUM     
+
+; Job Routine: verify a written block: mode=010 (A)
+; read data
+
+ FE3A  20 C3 FD  VRFY       JSR DSTRT     
+ FE3D  24 4D     iFE3D      BIT VIA_IFR    ; get byte and compare with contents of buffer, add up chksum
+ FE3F  10 FC                BPL iFE3D     
+ FE41  A5 41                LDA VIA_DIN   
+ FE43  D1 16                CMP (BUFPT),Y 
+ FE45  D0 1A                BNE iFE61     
+ FE47  45 08                EOR WORK      
+ FE49  85 08                STA WORK      
+ FE4B  C8                   INY           
+ FE4C  D0 EF                BNE iFE3D     
+ FE4E  20 52 FF  DEND       JSR BYTE       ; end reading data, final chksum compare
+ FE51  C5 08                CMP WORK      
+ FE53  F0 04                BEQ iFE59     
+ FE55  A9 05                LDA #$05      
+ FE57  D0 0A                BNE ER        
+ FE59  A9 10     iFE59      LDA #$10       ; check if decoding error: if not then DONE, else ER
+ FE5B  24 4D                BIT VIA_IFR   
+ FE5D  F0 62                BEQ DONE      
+ FE5F  D0 02                BNE ER        
+ FE61  A9 07     iFE61      LDA #$07       ; set for verify error
+ FE63  D0 5E     ER         BNE ERR        ; branch to error routing ERR
+
+; seek to determine next sector number
+; init chksum, get block header
+
+ FE65  A9 00     SEEK       LDA #$00      
+ FE67  85 08                STA WORK      
+ FE69  A2 06                LDX #$06      
+ FE6B  20 F3 FE             JSR HEAD      
+ FE6E  A0 04                LDY #$04      
+ FE70  20 4D 10  iFE70      JSR i104D      ; get a byte, store in STAB update chksum, branch again if more
+
+; FE73: Illegal instruction.
+
+ FE73             .byte $FC, $A5, $41, $99, $0D, $00, $45, $08  ;.%a.m.eh
+ FE7B             .byte $85, $08, $88, $10, $F0, $C9, $00, $D0  ;.h.p.I.P
+
+; Job Routine: seek: mode 011 (b)
+
+
+; *** Invalid reference FE83 ignored.
+
+ FE83  ESEEK      .byte $42, $A5, $0F, $29, $3F, $A6, $12, $95  ;b%o)?&r.
+ FE8B             .byte $03                                     ;c
+
+
+; load job# and type, test if seek, branch to ESEEK if so
+
+ FE8C             .byte $A4, $1A, $B9, $03, $04, $29, $70, $C9  ;$z9cd)PI
+ FE94             .byte $30, $F0, $1C, $98, $20, $99, $FD, $A0  ;0.\. .. 
+ FE9C             .byte $02, $B1, $18, $45, $0F, $29, $C0, $D0  ;b1xeo).P
+ FEA4             .byte $25, $88                                ;%.
+
+
+; check if id in (HDPTR),y = STAB,y error if not. continue loop, at end jmp WSECT
+
+
+ FEA6  B1 18     iFEA6      LDA (HDRPNT),Y ; check if id in (HDPTR),y = STAB,y error if not. continue loop, at end jmp WSECT
+ FEA8  D9 0D 00             CMP STAB,Y    
+ FEAB  D0 1D                BNE iFECA     
+ FEAD  88                   DEY           
+ FEAE  10 F6                BPL iFEA6     
+ FEB0  4C 2D FD             JMP WSECT     
+ FEB3  98        iFEB3      TYA           
+ FEB4  20 99 FD             JSR iFD99     
+ FEB7  A0 04                LDY #$04      
+ FEB9  B9 0D 00  iFEB9      LDA STAB,Y     ; get complete header from STAB,y into (HDRPNT),y
+ FEBC  91 18                STA (HDRPNT),Y
+ FEBE  88                   DEY           
+ FEBF  10 F8                BPL iFEB9     
+ FEC1  A9 01     DONE       LDA #$01       ; set for no error: #1
+ FEC3  4C F9 FE  ERR        JMP ERROR      ; jump ERROR: error routine
+ FEC6  A9 09     CSERR      LDA #$09       ; lda #9 (chksum error) branch to ERR
+ FEC8  D0 F9                BNE ERR       
+ FECA  A9 0B     iFECA      LDA #$0B      
+ FECC  D0 F5                BNE ERR        ; lda#11 (mismatch), branch to ERR
+ FECE  A0 03     SRCH       LDY #$03       ; search for specific block
+ FED0  A9 00                LDA #$00      
+ FED2  51 18     iFED2      EOR (HDRPNT),Y ; compute checksum, set up for search for a sector
+ FED4  88                   DEY           
+ FED5  10 FB                BPL iFED2     
+ FED7  A0 04                LDY #$04      
+ FED9  91 18                STA (HDRPNT),Y
+ FEDB  A4 1A                LDY FTNUM     
+ FEDD  A2 5A                LDX #$5A      
+ FEDF  20 F3 FE  iFEDF      JSR HEAD       ; jsr HEAD, set y for compare, every byte in hdr must be identical
+ FEE2  A0 04                LDY #$04      
+ FEE4  24 4D     iFEE4      BIT VIA_IFR    ; compare to header loop, loop entire header
+ FEE6  10 FC                BPL iFEE4     
+ FEE8  A5 41                LDA VIA_DIN   
+ FEEA  D1 18                CMP (HDRPNT),Y
+ FEEC  D0 F1                BNE iFEDF     
+ FEEE  88                   DEY           
+ FEEF  10 F3                BPL iFEE4     
+ FEF1  C8                   INY           
+ FEF2  60                   RTS           
+
+ FEF3  58        HEAD       CLI            ; seach for block head: .x=max# of trials
+ FEF4  CA                   DEX           
+ FEF5  10 2E                BPL iFF25     
+ FEF7  A9 02                LDA #$02      
+
+; send error code
+; #1: no error
+; #2: can't find block head
+; #3: no sync character
+; #4: data block not present
+; #5: checksum error
+; #7: verify error
+; #8: write with write protect on
+; #9: checksum error in seeked header
+; #10: data ran into next header
+; #11: disk id mismatch
+; #16: decoding error
+
+ FEF9  24 1E     ERROR      BIT IOB       
+ FEFB  10 0A                BPL iFF07     
+ FEFD  E6 1F                INC JOBNUM    
+ FEFF  A2 3F                LDX #$3F      
+ FF01  9A                   TXS           
+ FF02  A6 12                LDX DRIVE     
+ FF04  4C 43 05             JMP i0543     
+ FF07  A4 1A     iFF07      LDY FTNUM     
+ FF09  99 03 04             STA JOBS,Y    
+ FF0C  A6 12                LDX DRIVE     
+ FF0E  A5 00                LDA CLOCK     
+ FF10  6D 02 04             ADC CUTMT     
+ FF13  95 01                STA MTRTM,X   
+ FF15  B9 03 04             LDA JOBS,Y    
+ FF18  C9 01                CMP #$01      
+ FF1A  D0 03                BNE iFF1F     
+ FF1C  4C A1 FD             JMP FSNUM     
+ FF1F  A2 3F     iFF1F      LDX #$3F      
+ FF21  9A                   TXS           
+ FF22  4C 47 FC             JMP START     
+ FF25  20 3F FF  iFF25      JSR SYNC      
+ FF28  C9 08                CMP #$08      
+ FF2A  D0 C7                BNE HEAD      
+ FF2C  60                   RTS           
+
+; watch for sync characters
+; bit PB, bvc L450: test if sync present, branch if yes
+; bit IFR, bpl WATCH, test if byte present, loop until yes
+; .x contains # of tests, branch to WATCH till .x=0
+; bit PB, rts; test if sync present then return
+
+ FF2D  24 82     WATCH      BIT RIOT_PB   
+ FF2F  50 0D                BVC iFF3E     
+ FF31  24 4D                BIT VIA_IFR   
+ FF33  10 F8                BPL WATCH     
+ FF35  24 41                BIT VIA_DIN   
+ FF37  24 40                BIT VIA_VB    
+ FF39  CA                   DEX           
+ FF3A  D0 F1                BNE WATCH     
+ FF3C  24 82                BIT RIOT_PB   
+ FF3E  60        iFF3E      RTS           
+
+ FF3F  78        SYNC       SEI           
+ FF40  A9 D0                LDA #$D0      
+ FF42  85 45                STA VIA_TIMER 
+ FF44  A9 03                LDA #$03      
+ FF46  24 45     iFF46      BIT VIA_TIMER 
+ FF48  10 AF                BPL ERROR     
+ FF4A  24 82                BIT RIOT_PB   
+ FF4C  70 F8                BVS iFF46     
+ FF4E  24 40                BIT VIA_VB    
+ FF50  24 41                BIT VIA_DIN   
+ FF52  24 4D     BYTE       BIT VIA_IFR   
+ FF54  10 FC                BPL BYTE      
+ FF56  A5 41                LDA VIA_DIN   
+ FF58  60                   RTS           
+
+ FF59  20 7C FF  OFF        JSR OUT       
+ FF5C  A2 00                LDX #$00      
+ FF5E  20 7C FF             JSR OUT       
+ FF61  A9 FC                LDA #$FC      
+
+; change EOUT and PCR to send sync. 
+; enable CB1, CA1, CB2 (IER=%10011010), get a byte. 
+; reset VIA flags, get next byte, reset VIA, jmp BYTE (get next byte)
+
+ FF63  24 4D     iFF63      BIT VIA_IFR   
+ FF65  10 FC                BPL iFF63     
+ FF67  86 81                STX RIOT_EOUT 
+ FF69  85 4C                STA VIA_PCR   
+ FF6B  A9 9A                LDA #$9A      
+ FF6D  85 4E                STA VIA_IER   
+ FF6F  20 52 FF             JSR BYTE      
+ FF72  24 40                BIT VIA_VB    
+ FF74  20 52 FF             JSR BYTE      
+ FF77  24 40                BIT VIA_VB    
+ FF79  4C 52 FF             JMP BYTE      
+
+ FF7C  24 4D     OUT        BIT VIA_IFR   
+ FF7E  10 FC                BPL OUT       
+ FF80  86 80                STX RIOT_DOUT 
+ FF82  24 41                BIT VIA_DIN   
+ FF84  60                   RTS           
+
+; CPU interrupt routine
+
+ FF85  48        IRQ        PHA           
+ FF86  8A                   TXA           
+ FF87  48                   PHA           
+ FF88  AD 00 04             LDA TICK      
+ FF8B  85 8F                STA x8F       
+ FF8D  E6 00                INC CLOCK     
+ FF8F  A2 01                LDX #$01      
+ FF91  A5 00     iFF91      LDA CLOCK     
+ FF93  D5 01                CMP MTRTM,X   
+ FF95  D0 16                BNE iFFAD     
+ FF97  BD ED FF             LDA ANDC,X    
+ FF9A  16 03                ASL DRVST,X   
+ FF9C  24 40                BIT VIA_VB    
+ FF9E  B0 08                BCS iFFA8     
+ FFA0  38                   SEC           
+ FFA1  BD F1 FF             LDA ANDE,X    
+ FFA4  45 40                EOR VIA_VB    
+ FFA6  85 40                STA VIA_VB    
+ FFA8  D0 01     iFFA8      BNE iFFAB     
+ FFAA  18                   CLC           
+ FFAB  76 03     iFFAB      ROR DRVST,X   
+ FFAD  B5 05     iFFAD      LDA STEPS,X   
+ FFAF  D0 09                BNE L911      
+ FFB1  B5 03                LDA DRVST,X   
+ FFB3  29 BF                AND #$BF      
+ FFB5  95 03                STA DRVST,X   
+ FFB7  4C E4 FF             JMP iFFE4     
+ FFBA  0A        L911       ASL           
+ FFBB  A5 40                LDA VIA_VB    
+ FFBD  3D D4 FC             AND ANDA,X    
+ FFC0  85 07                STA COW       
+ FFC2  A5 40                LDA VIA_VB    
+ FFC4  3D EF FF             AND ANDD,X    
+ FFC7  B0 07     ERR1       BCS iFFD0      ; send job status, make motor stay longer, check job type
+ FFC9  D6 05                DEC STEPS,X    ; step in (+)
+ FFCB  7D EB FF             ADC ANDB,X    
+ FFCE  D0 05                BNE iFFD5     
+ FFD0  F6 05     iFFD0      INC STEPS,X    ; step out (-)
+ FFD2  FD EB FF             SBC ANDB,X    
+ FFD5  ED EF FF  iFFD5      SBC ANDD      
+ FFD8  05 07                ORA COW        ; store new stepper position, test if DRVTST ready
+ FFDA  85 40                STA VIA_VB    
+ FFDC  B5 03                LDA DRVST,X   
+ FFDE  30 04                BMI iFFE4     
+ FFE0  A5 00                LDA CLOCK     
+ FFE2  95 01                STA MTRTM,X   
+ FFE4  CA        iFFE4      DEX           
+ FFE5  10 AA                BPL iFF91     
+ FFE7  68                   PLA            ; pop the stack of a and x and RTI
+ FFE8  AA                   TAX           
+ FFE9  68                   PLA           
+ FFEA  40                   RTI           
+
+ FFEB  ANDB       .byte $04, $01                                ;da
+ FFED  ANDC       .byte $20, $10                                ; p
+ FFEF  ANDD       .byte $0C, $03                                ;lc
+ FFF1  ANDE       .byte $A0, $50, $20, $49, $53, $20, $4F, $4E  ; p is on
+ FFF9             .byte $20, $41, $4E
+
+; CPU vectors
+
+, RESET   
+ FFFE             .word IRQ     
+
+
+; Misassembly source 4.08 15 May 2005   Generated  Sun Jul 31 00:15:53 CEST 2005

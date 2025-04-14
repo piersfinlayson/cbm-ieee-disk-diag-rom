@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- Add check for 6504 booting
+- Get taking over the 6504 from the 6502 working
+- Added 6504 test to run both drive motors briefly, in turn
+
 ## 0.1.3
 
 - Speed up RAM tests by removing debug delay

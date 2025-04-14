@@ -1,0 +1,167 @@
+; *** text follows ***
+
+ *=$0500
+
+; This is stored in the 6502 ROM and dynamically transferred to the 6504 VIA
+; shared RAM, for 6504 to execute and format the disk.
+
+ 0500  A5 1B                LDA x1B       
+ 0502  10 3A                BPL i053E     
+ 0504  78                   SEI           
+ 0505  A9 C1                LDA #$C1      
+ 0507  95 03                STA x03,X     
+ 0509  A9 0F                LDA #$0F      
+ 050B  3D EF FF             AND xFFEF,X   
+ 050E  05 40                ORA x40       
+ 0510  85 40                STA x40       
+ 0512  A9 8C                LDA #$8C      
+ 0514  95 05                STA x05,X     
+ 0516  58                   CLI           
+ 0517  B5 05     i0517      LDA x05,X     
+ 0519  D0 FC                BNE i0517     
+ 051B  98                   TYA           
+ 051C  0A                   ASL           
+ 051D  0A                   ASL           
+ 051E  0A                   ASL           
+ 051F  18                   CLC           
+ 0520  69 21                ADC #$21      
+ 0522  85 18                STA x18       
+ 0524  A0 00                LDY #$00      
+ 0526  84 1F                STY x1F       
+ 0528  C8                   INY           
+ 0529  84 1B                STY x1B       
+ 052B  C8                   INY           
+ 052C  B1 18                LDA (x18),Y   
+ 052E  29 C0                AND #$C0      
+ 0530  09 01                ORA #$01      
+ 0532  91 18                STA (x18),Y   
+ 0534  A4 1A                LDY x1A       
+ 0536  29 3F                AND #$3F      
+ 0538  99 12 04  i0538      STA x0412,Y   
+ 053B  4C 47 FC             JMP iFC47     
+ 053E  D9 12 04  i053E      CMP x0412,Y   
+ 0541  D0 F5                BNE i0538     
+ 0543  78                   SEI           
+ 0544  A9 19                LDA #$19      
+ 0546  85 0A                STA x0A       
+ 0548  A0 03     i0548      LDY #$03      
+ 054A  A9 00                LDA #$00      
+ 054C  91 18                STA (x18),Y   
+ 054E  A9 10                LDA #$10      
+ 0550  85 4E                STA x4E       
+ 0552  A9 DC                LDA #$DC      
+ 0554  85 4C                STA x4C       
+ 0556  A9 08                LDA #$08      
+ 0558  25 82                AND x82       
+ 055A  F0 05                BEQ i0561     
+ 055C  A9 08                LDA #$08      
+ 055E  4C C3 FE             JMP iFEC3     
+ 0561  A0 03     i0561      LDY #$03      
+ 0563  A9 00                LDA #$00      
+ 0565  51 18     i0565      EOR (x18),Y   
+ 0567  88                   DEY           
+ 0568  10 FB                BPL i0565     
+ 056A  A0 04                LDY #$04      
+ 056C  91 18                STA (x18),Y   
+ 056E  A2 FF                LDX #$FF      
+ 0570  86 81                STX x81       
+ 0572  84 08                STY x08       
+ 0574  E8                   INX           
+ 0575  A0 00                LDY #$00      
+ 0577  20 7C FF  i0577      JSR iFF7C     
+ 057A  88                   DEY           
+ 057B  D0 FA                BNE i0577     
+ 057D  C6 08                DEC x08       
+ 057F  D0 F6                BNE i0577     
+ 0581  A2 00     i0581      LDX #$00      
+ 0583  A0 00                LDY #$00      
+ 0585  20 7C FF  i0585      JSR iFF7C     
+ 0588  88                   DEY           
+ 0589  D0 FA                BNE i0585     
+ 058B  A9 DE                LDA #$DE      
+ 058D  86 08                STX x08       
+ 058F  CA                   DEX           
+ 0590  20 7C FF             JSR iFF7C     
+ 0593  85 4C                STA x4C       
+ 0595  20 7C FF             JSR iFF7C     
+ 0598  A9 DC                LDA #$DC      
+ 059A  A2 08                LDX #$08      
+ 059C  20 7C FF             JSR iFF7C     
+ 059F  85 4C                STA x4C       
+ 05A1  A0 04                LDY #$04      
+ 05A3  B1 18     i05A3      LDA (x18),Y   
+ 05A5  24 4D     i05A5      BIT $4D       
+ 05A7  10 FC                BPL i05A5     
+ 05A9  85 80                STA x80       
+ 05AB  24 41                BIT $41       
+ 05AD  88                   DEY           
+ 05AE  10 F3                BPL i05A3     
+ 05B0  A4 0A                LDY x0A       
+ 05B2  20 7C FF  i05B2      JSR iFF7C     
+ 05B5  88                   DEY           
+ 05B6  D0 FA                BNE i05B2     
+ 05B8  A0 03                LDY #$03      
+ 05BA  B1 18                LDA (x18),Y   
+ 05BC  85 08                STA x08       
+ 05BE  18                   CLC           
+ 05BF  69 01                ADC #$01      
+ 05C1  91 18                STA (x18),Y   
+ 05C3  C5 15                CMP x15       
+ 05C5  F0 0A                BEQ i05D1     
+ 05C7  C8                   INY           
+ 05C8  45 08                EOR x08       
+ 05CA  51 18                EOR (x18),Y   
+ 05CC  91 18                STA (x18),Y   
+ 05CE  4C 81 05             JMP i0581     
+ 05D1  20 59 FF  i05D1      JSR iFF59     
+ 05D4  A2 FA                LDX #$FA      
+ 05D6  20 2D FF             JSR iFF2D     
+ 05D9  70 06                BVS i05E1     
+ 05DB  C6 0A                DEC x0A       
+ 05DD  F0 1C                BEQ i05FB     
+ 05DF  D0 0F                BNE i05F0     
+ 05E1  A2 28     i05E1      LDX #$28      
+ 05E3  20 2D FF             JSR iFF2D     
+ 05E6  50 0B                BVC i05F3     
+ 05E8  E6 0A                INC x0A       
+ 05EA  A5 0A                LDA x0A       
+ 05EC  C9 30                CMP #$30      
+ 05EE  F0 0B                BEQ i05FB     
+ 05F0  4C 48 05  i05F0      JMP i0548     
+ 05F3  A5 1F     i05F3      LDA x1F       
+ 05F5  C9 30                CMP #$30      
+ 05F7  D0 0B                BNE i0604     
+ 05F9  06 1E                ASL x1E       
+ 05FB  A9 FF     i05FB      LDA #$FF      
+ 05FD  85 1B                STA x1B       
+ 05FF  A9 0C                LDA #$0C      
+ 0601  4C F9 FE             JMP iFEF9     
+ 0604  A9 80     i0604      LDA #$80      
+ 0606  85 1E                STA x1E       
+ 0608  A9 00                LDA #$00      
+ 060A  A0 03                LDY #$03      
+ 060C  91 18                STA (x18),Y   
+ 060E  20 CE FE  i060E      JSR iFECE     
+ 0611  A0 03                LDY #$03      
+ 0613  B1 18                LDA (x18),Y   
+ 0615  18                   CLC           
+ 0616  69 01                ADC #$01      
+ 0618  91 18                STA (x18),Y   
+ 061A  C5 15                CMP x15       
+ 061C  D0 F0                BNE i060E     
+ 061E  06 1E                ASL x1E       
+ 0620  E6 1B                INC x1B       
+ 0622  A5 1B                LDA x1B       
+ 0624  C9 24                CMP #$24      
+ 0626  F0 12                BEQ i063A     
+ 0628  A0 02                LDY #$02      
+ 062A  B1 18                LDA (x18),Y   
+ 062C  29 C0                AND #$C0      
+ 062E  05 1B                ORA x1B       
+ 0630  91 18                STA (x18),Y   
+ 0632  A6 12                LDX x12       
+ 0634  FE 12 04             INC x0412,X   
+ 0637  4C 47 FC             JMP iFC47     
+ 063A  A9 FF     i063A      LDA #$FF      
+ 063C  85 1B                STA x1B       
+ 063E  4C C1 00             JMP iC1

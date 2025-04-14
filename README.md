@@ -94,22 +94,24 @@ After boot and during this phase, the ERR LED is not used.  The other LEDs show 
 | All LEDs including ERR on | [Device coming out of reset](#device-coming-out-of-reset) |
 | All LEDs remain on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) | 
 | ERR LED goes out, followed by DR0/DR1 lights | [Testing zero page](#testing-zero-page) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | No visual indication | [Retrieving device ID](#retrieving-device-id) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #1](#static-ram-test) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
-| DR0/DR1 both blink twice quickly | [Attempted to pause 6504](#️pausing-the-6504) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| No visual indication | [Checking 6504 booted](#️checking-the-6504-booted) |
+| Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| No visual indication | [Attempted to pause 6504](#️pausing-the-6504) |
+| Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #2](#static-ram-test) |
-| Both drive lights blink slowly on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
+| Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 
 ### 📢Reporting Results
 
 After the above tests have run the drive goes through a reporting sequence, and repeats it forever:
 - Report any zero page error with UC1
 - Report any static RAM errors
-- Report any 6504 error
+- Report any 6504 errors
 - Report any device ID
 
 If you don't see the ERR LED coming on, and you see 8 flashes of the DR0/DR1 LEDs repeating, congratulations - the diagnostics ROM tests passes, and your device is configured as device 8.
@@ -121,7 +123,8 @@ Reporting uses the following patterns:
 | ERR and DR1 LEDs blinking fast | [UE1 zero page test failed](#ue1-zero-page-test-failed) |
 | ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#️static-ram-check-failed) |
 | ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#️uc1-zero-page-test-failed) |
-| ERR on, 6 flashes on both DR1 and DR0 | [Failed to pause 6504](#️failed-to-pause-6504) |
+| ERR on, 6 flashes on both DR1 and DR0 | [6504 failed to boot](#️6504-failed-to-boot) |
+| ERR on, 7 flashes on both DR1 and DR0 | [Failed to pause 6504](#️failed-to-pause-6504) |
 | ERR LED off, DR0/DR1 flashing | [Reporting Device ID](#reporting-device-id) |
 
 ## 📋Detailed Test Information
@@ -156,7 +159,7 @@ There is no visual indication when it happens and it is very fast - the ROM just
 
 Two static RAM tests are performed:
 - The first tests $1100-$13FF, $2000-$23FF, $3000-$33FF and $4000-43FF.
-- THe second, which runs after an attempt to take over control of the 6504, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the 6504, to take it over.  We try to take the 6504 over before testing this range, so we avoid crashing or confusing the 6504 by changing RAM from under it. 
+- THe second, which runs after checking the 6504 and attempting to take over control over it, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the 6504, to take it over.  We try to take the 6504 over before testing this range, so we avoid crashing or confusing the 6504 by changing RAM from under it. 
 
 The DR0 and DR1 LEDs illuminate during each page (256 byte) test, with the LED switching for each page of RAM is tested.
 - For the first static RAM test you should see them blinking alternating back and forth, for a total of 15 illuminations.
@@ -164,13 +167,19 @@ The DR0 and DR1 LEDs illuminate during each page (256 byte) test, with the LED s
 
 The static RAM test is relatively straightforward.  Each byte is tested in turn with a variety of patterns.  If a failure is hit on both the upper nibble and lower nibble for an address in a particular bank, the remaining tests for that bank is skipped - as this demonstrates both RAM chips for that bank are faulty.  
 
+### 🟡Checking the 6504 booted
+
+Before testing RAM $1000-10FF, the diagnostics ROM checks the 6504 booted.  This is done by checking some shared RAM locations the 6504 should have written to - these are located in the $1000-$10FF range.  Of course, it is possible, as this RAM range hasn't been tested yet it isn't working - and we get a false positive - but we have checked the remaining 75% of the chips that make up this range if we perform this test, so it is highly likely the RAM is good.
+
+If the 6504 appears not to have booted, the subsequent step [Pausing the 6504](#️pausing-the-6504) will be skipped.
+
 ### ⏸️Pausing the 6504
 
-**🚧 Work in progress - not yet functional 🚧**
+After checking the 6504 has booted, and still before testing RAM $1000-$10FF, the diagnostics ROM attemptes to pause the 6504.  The ROM will wait for up to 1s for a response from the 6504 that it has paused.  The drive 0 motor will very briefly spin if this test is successful.  (The reason for the brief spin, is that the 6504 stock ROM code will spin up the drive motor briefly when the 6502 asks it to execute a job - which is how the diagnostics ROM takes over the 6504.  It does this because it expects a job to involve reading or writing to the disk - for example, this is the mechanism that is used by the 6502 to format a disk.)
 
-Before testing RAM $1000-$10FF, the diagnostics ROM attemptes to pause the 6504.  This is signalled by flashing DR0 and DR1 twice in very quick succession.  The ROM will wait for up to 1s for a response from the 6504 that it has paused.
+This test has the added benefit of checking that the 6504 is running, and behaving as expected, not just that it has booted - if the diagnostics ROM can take it over and pause it, the 6504 and its ROM (stored in the 6530 RRIOT UK3) are working.
 
-This test has the added benefit of checking that the 6504 is running, and behaving as expected - if the diagnostics ROM can take it over and pause it, the 6504 and its ROM (stored in the 6530 RRIOT UK3) are working.
+We can also use this capability to add further 6504 tests in future, as we have full control over it if this test succeeds.
 
 ## 📊Detailed Result Information
 
@@ -217,11 +226,17 @@ In this scenario the ERR LED is lit while either the DR1 or DR0 LED flashes.  Al
 
 If you see failures across all of your chips, it may instead be one or more failed 74LS157s UC3/UD3/UE3/UF3 - as these multiplex the address lines from the 6502 and 6504 to the RAM chips.  Or, it may be a bus problem - try removing the 6504 (UH3), 6530 (UK3) and 6522 (UM3) from the board and re-running the test.  This isolates those chip as potentially conflicting with the shared data bus.  Of course, you will then get a 6504 error reported. 
 
+### ⚠️6504 failed to boot
+
+If this fails, it may be a 6504 failure, or a  problem with another chip on the 6504 address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.  Or a problem with the shared RAM UC4 or UC5 (although unlikely if both static RAM tests passed).
+
+It may also be a problem with the shared data bus.  As the data bus is shared between both the 6504 and 6502, be suspicious of a shared bug problem if, as well as a 6504 failure, you also get a [static RAM failure](#️static-ram-check-failed).
+
 ### ⚠️Failed to pause 6504
 
 If this fails, it signifies either a 6504 failure, or possibly another component on the 6504 address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.
 
-It may also be a problem with the shared data bus.  As the data bus is shared between both 6504 and 6502 controls, be suspicious of a shared bug problem if, as well as a 6504 failure, you also get a [static RAM failure](#️static-ram-check-failed).
+It may also be a problem with the shared data bus.  As the data bus is shared between both the 6504 and 6502, be suspicious of a shared bug problem if, as well as a 6504 failure, you also get a [static RAM failure](#️static-ram-check-failed).
 
 ### 🆔Reporting Device ID
 

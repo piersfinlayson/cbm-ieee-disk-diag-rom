@@ -10,12 +10,18 @@
     .endif
 .endif
 
+SHARED_RAM_6502_START = $1000
+SHARED_RAM_6504_START = $400
 .ifdef CPU_6502
+SHARED_RAM_START = SHARED_RAM_6502_START
+.else
+SHARED_RAM_START = SHARED_RAM_6504_START
+.endif
+
 ; Address for the JOB 0 slot.  This is $0403 on the 6504 and comes
 ; from the Commodore 6504 ROM, located in the 6530 RRIOT chip at UK3, part
 ; number 901466.
-JOB_0_SLOT = $1003
-.endif
+JOB_0_SLOT = SHARED_RAM_START + $03
 
 ; Value the 1st bank of static RAM is mapped to on the 6504 relative to the
 ; 6504.
@@ -27,28 +33,35 @@ RAM_BANK_1_OFFSET = ($1000 - $400)
 ; if it written to both bytes.  This is to stop is accidently causing the 6504
 ; to perform an operation when we are testing the shared RAM.  We shouldn't do
 ; this while it is listening at that location, but belts and braces.
-.ifdef CPU_6502
-CMD1 = $10F0
-CMD2 = $10F1
-.else
-CMD1 = $10F0 - RAM_BANK_1_OFFSET
-CMD2 = $10F1 - RAM_BANK_1_OFFSET
-.endif
+CMD1 = SHARED_RAM_START + $F0
+CMD2 = SHARED_RAM_START + $F1
+
+; Location for any variables for commands.  Used by the TEST_DRIVE command
+CMD_VAR = SHARED_RAM_START + $F2
 
 ; Location the 6504 control routine we caue it to execute uses to store its
 ; status.
-.ifdef CPU_6502
-STATUS_6504 = $10F2
-.else
-STATUS_6504 = $10F2 - RAM_BANK_1_OFFSET
-.endif
+STATUS_6504 = SHARED_RAM_START + $F3
+
+; Location the 6504 control routine uses to store the result of the command
+CMD_RESULT = SHARED_RAM_START + $F4
+
+; Command this result refers to.
+CMD_RESULT_CMD = SHARED_RAM_START + $F5
+
+CMD_RESULT_NONE = $80
+CMD_RESULT_OK = $00
+CMD_RESULT_ERR = $01
 
 ; Commands used to control the 6504 via the 6502's control routine.  As above,
 ; these must be written to both CMD locations to cause the 6504 control
 ; routine to execute them.  They must match the values in that file.
 
 ; Value indicating no command has been issued. 
-CMD_NONE = $0
+CMD_NONE = $00        ; Must be zero as that's how static RAM is left
+
+; Test drives
+CMD_TEST_DRIVE = $01
 
 ; These commands instruct the 6504 control routine to reset the 6504 - this
 ; jumps to the reset vector.
@@ -57,7 +70,8 @@ CMD_RESET = $FF
 ; These are the supported status values the 6504 routine may return.
 STATUS_6504_NONE = $00
 STATUS_6504_RUNNING = $01
-STATUS_6504_RESETTING = $02
+STATUS_6504_TESTING_DRIVE = $02
+STATUS_6504_RESETTING = $FF
 
 .ifdef CPU_6502
 ; 6502/6504 shared job of type execute.  Must be ORed with $80 to indicate to
@@ -75,6 +89,16 @@ JOB_BUMP = $40
 .else
   CODE_6504_START = $DF00
 .endif
-CODE_6504_CMD_PTR = CODE_6504_START + 0
-CODE_6504_CMD_LEN = CODE_6504_START + 2
 .endif
+
+; Constants indicating shared RAM locations (as offsets from the start) used by
+; the stock 6504 ROM
+TICK_OFFSET = $00
+DELAY_OFFSET = $01
+CUTMT_OFFSET = $02
+
+; Constants indicating expected values of shared RAM locations used by the
+; stock 6504 ROM.
+TICK_INIT = $0F
+DELAY_INIT = $32
+CUTMT_INIT = $FF

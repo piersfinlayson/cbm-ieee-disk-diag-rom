@@ -12,7 +12,7 @@ CPU_6502 = 1
 ; Version numbers
 MAJOR_VERSION = $00
 MINOR_VERSION = $01
-PATCH_VERSION = $03
+PATCH_VERSION = $04
 RESERVED = $00
 
 ; Constants
@@ -63,14 +63,39 @@ RamTestLedPattern:
 RamTestBytePattern:
     .byte $FF, $55, $AA, $A5, $5A, $24, $42, $00
 
+; Offsets from start of shared RAM that we check for 6504 aliveness.
+; We set the MSB for the last value.
+;
+; Only 8 offsets/byte tests are supported by check_6504_booted.
+;
+; We check:
+; - $1000 ($400 on the 6504) - TICK, initialized to $0F
+; - $1001 ($401 on the 6504) - DELAY, initialized to $32
+; - $1002 ($402 on the 6504) - CUTMT, initialized to $FF
+SharedRamOffsets:
+    .byte TICK_OFFSET, DELAY_OFFSET, CUTMT_OFFSET | $80
+.assert SharedRamInitValues - SharedRamOffsets <= 8, error, "Too many shared RAM locations to check"
+
+; Values we expect shared RAM locations to have, in order to show the 6504 is
+; alive.
+SharedRamInitValues:
+    .byte TICK_INIT, DELAY_INIT, CUTMT_INIT
+
 .segment "CODE"
 start:
+; CPU initialization.  The stock ROM also sets up the stack at this point.
+; That seems premature when we haven't tested zero page - as zero page is used
+; for the stack, as $100-$1FF shadows the zero page.
     CLD             ; Clear decimal mode
     SEI             ; Disable interrupts
-    LDA #DR01_LEDS  ; Turn on DR0 and DR1 LEDs for the zero page test.
-                    ; We deliberately don't turn on the ERR LED, as there is
-                    ; no error to report yet, and so this differentiates
-                    ; between the CPU not booted (all LEDs lit) and now 
+
+; Set the LEDs - we do this very early, and turn off ERR LED as part of this,
+; in order to indicate that the CPU has actually booted.  The stock ROM doesn't
+; do this until after the zero page test.
+;
+; The stock ROM also sets up the IEEE-488 pins at this point.  We won't do that
+; until later.
+    LDA #DR01_LEDS  ; Turn DR0 and DR1 on
     STA RIOT_UE1_PBD
     LDA #ALL_LEDS   ; Set LED pins to outputs
     STA RIOT_UE1_PBDD
@@ -99,8 +124,6 @@ zp_test:
     STA ZP,X        ; Store result in memory
     BNE @error      ; If not zero, memory failed - jump to bad zero page
                     ; handler
-    LDA #$00        ; Initialize tested location to 0
-    STA ZP,X
     CPX #$00        ; Check if we've done all zero page locations
     BNE @test       ; Loop until all zero page locations are verified
     BEQ @done       ; We're done
@@ -128,9 +151,10 @@ setup_stack:
 ; Each test is executed with a call to between_tests between them.  This blinks
 ; the drive LEDs to indicate a test completed and the next one will be run.
 ;
-; This is also our $D000 ROM entry point, JMPed to by $D005, as when we are
-; launched as a diagnostics ROM, the main $F000/$E000 ROMs have already tested
-; zero page and set up the stack.
+; This is also our $D000 ROM entry point, JMPed to by $D005 (where the stock
+; ROM will call into the diagnostics ROM if present), as when we are launched
+; as a diagnostics ROM, the main $F000/$E000 ROMs have already tested zero page
+; and set up the stack.
 with_stack_main:
     JSR between_tests
 
@@ -150,14 +174,25 @@ with_stack_main:
 
     JSR between_tests
 
-    ; Take control of the 6504
+    ; Check the 6504 booted sucessfully
+    JSR check_6504_booted
+
+    JSR between_tests
+
+    LDA RESULT_6504_BOOT    ; Check the result of the 6504 boot test
+    BNE @6504_failed        ; If not, skip to next test
+
+    ; 6504 boot test worked - so attempt to takeover the 6504
     JSR control_6504
 
     JSR between_tests
 
-    ; Run the second RAM test - this tests $1000-$10FF now we've attempted to
-    ; take control of the 6504.  (If we failed it's likely the 6504 isn't
-    ; running anyway.)
+@6504_failed:
+    ; Run the second RAM test - this tests $1000-$10FF, which is used by the
+    ; stock 6504 ROM from start of day, now we've tested the 6504, and
+    ; attempted to take control of it.  If we failed in either case it's likely
+    ; the 6504 isn't running anyway, so overwriting the shared RAM isn't an
+    ; issue.
     LDX #<RamTest2          ; Load low byte of test table address
     LDY #>RamTest2          ; Load high byte of test table address
     JSR test_ram_table      ; Call routine to test the RAM
@@ -165,6 +200,10 @@ with_stack_main:
     ORA TESTS_6502
     STA TESTS_6502          ; Store result in zero page
     JSR check_ram_result    ; Check we can continue
+
+    JSR between_tests
+
+    JSR test_drives
 
     JSR between_tests
 
@@ -246,6 +285,7 @@ finished:
     JSR report_zp       ; Report zero page errors, if any
     JSR report_ram      ; Report RAM errors, if any
     JSR report_6504     ; Report 6504 errors, if any
+    JSR report_drives   ; Report drive test errors, if any
     JSR report_dev_id   ; Report the device ID, if we have it
     JMP finished        ; Restart sequence
 
@@ -295,7 +335,7 @@ report_zp:
 ; Destroys A, X and Y
 report_ram:
     LDA TESTS_6502      ; Load the tests performed to A
-    ORA #(TEST_RAM1 | TEST_RAM2)    ; Check if either RAM test 1 or 2 took place
+    AND #(TEST_RAM1 | TEST_RAM2)    ; Check if either RAM test 1 or 2 took place
     BEQ @done           ; If not, skip to next check
 
     ; One or both of the RAM tests happened - use RESULT_RAM_TEST to report
@@ -350,23 +390,91 @@ report_ram:
 
 ; Report any 6504 error(s)
 ;
-; Uses RESULT_6504 (set by the 6504 test)
+; Uses RESULT_6504 (set by the 6504 tests)
 ;
 ; Destroys A, X and Y
 report_6504:
-    LDA TESTS_6502      ; Load the tests performed to A
-    ORA #TEST_6504_TO   ; Check if 6504 test was performed
-    BEQ @done           ; If not, skip to next check
-    
-    LDA RESULT_6504     ; Load the result of the 6504 test
-    LSR A               ; Shift right to see if the takeover failed
-    BCC @done   ; If not, skip to next check
+    LDA TESTS_6502          ; See if boot test was performed
+    AND #TEST_6504_BOOT     ; Check if 6504 test was performed
+    BEQ @done               ; Done - as takeover won't have happened either
 
-    ; 6504 test failed - report it
+    ; 6504 boot test was performed - check if it succeeded
+    LDA RESULT_6504_BOOT    ; Load the result of the 6504 test
+    BEQ @report_takeover    ; It succeeded - no error to report
+
+    ; 6504 boot test failed - report it by flashing both LEDs 6 times
     LDA #$06            ; Flash 6 times for 6504 control takeover failure
     LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error
+    JSR between_reports ; pause for 1s with all LEDs off
+
+@report_takeover:
+    LDA TESTS_6502      ; Check if takeover test was performed
+    AND #TEST_6504_TO   ; Check if 6504 test was performed
+    BEQ @done           ; If not, done
+
+    LDA RESULT_6504_TO  ; Load the takeover result
+    BEQ @done           ; It succeeded
+
+    ; 6504 takeover test failed - report it by flashing both LEDs 7 times
+    LDA #$07            ; Flash 7 times for 6504 control takeover failure
+    LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error ; Flash the LED the number of times indicated by the
+                        ; result
+    JSR between_reports ; pause for 1s with all LEDs off
+
+@done:
+    RTS
+
+; Report any drive error(s)
+;
+; Uses RESULT_DRIVE0 and RESULT_DRIVE1 (set by the drive tests)
+;
+; Destroys A, X and Y
+report_drives:
+    LDA TESTS_6502      ; Load the tests performed to A
+    AND #TEST_DRIVES    ; Check if drive test was performed
+    BEQ @done           ; If not, skip to next check
+
+    LDA RESULT_DRIVE0   ; Load the result of the drive test
+    BEQ @drive1_check   ; If not, skip to next check
+    
+    ; Drive 0 test failed - report it by flashing all LEDs 8 times
+    LDA #$08            ; Flash 8 times for drive 0 error
+    LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show drive 0 error
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error ; Flash the LED the number of times indicated by the
+                        ; result
+    JSR between_reports ; pause for 1s with all LEDs off
+
+    ; And now flash drive 0 LED the number of times indicated by the result
+    LDA RESULT_DRIVE0   ; Load the result of the drive test
+    LDY #DR0_LED        ; Flash 5 times for drive 0 error
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error ; Flash the LED the number of times indicated by the
+                        ; result
+    JSR between_reports ; pause for 1s with all LEDs off
+
+@drive1_check:
+    LDA RESULT_DRIVE1   ; Load the result of the drive test
+    BEQ @done           ; If not, skip to next check
+
+    ; Drive 1 test failed - report it by flashing all LEDs 8 times
+    LDA #$08            ; Flash 8 times for drive 1 error
+    LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show drive 1 error
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error ; Flash the LED the number of times indicated by the
+                        ; result
+    JSR between_reports ; pause for 1s with all LEDs off
+
+    ; And now flash drive 1 LED the number of times indicated by the result
+    LDA RESULT_DRIVE1   ; Load the result of the drive test
+    LDY #DR1_LED        ; Flash 5 times for drive 1 error
+    LDX #$40            ; Set flash delay to 1/4 second
+    JSR flash_led_error ; Flash the LED the number of times indicated by the
+                        ; result
     JSR between_reports ; pause for 1s with all LEDs off
 
 @done:
@@ -377,8 +485,7 @@ report_6504:
 ; Destroys A, X and Y
 report_dev_id:
     LDA TESTS_6502      ; Load the tests performed to A
-@dev_id_check:
-    ORA #TEST_DEV_ID    ; Check if device ID test was performed
+    AND #TEST_DEV_ID    ; Check if device ID test was performed
     BEQ @done           ; If not, skip to next check
 
     LDY DEVICE_ID       ; Initialize Y to the device ID
@@ -641,6 +748,63 @@ check_ram_result:
     JMP finished        ; It failed - we can't continue, jump immediately to
                         ; the finished routine
 
+; Check that the 6504 booted successfully.
+;
+; We use shared memory locations to check this using the values in
+; - SharedRamOffsets
+; - SharedRamInitValues
+;
+; If any of these values are not set appropriately, it is likely 6504 has not
+; booted.  It is possible that the shared RAM has failed, but we check most
+; of the chips providing these locations prior to calling this, so should be
+; OK.
+;
+; Returns A set to 0 on success, non-zero (bits set indicating which values
+; were incorrect, starting as LSB) on failure.
+check_6504_booted:
+    ; Initialize variables
+    LDY #$00                    ; Use Y as index into shared RAM offsets/values
+    STY BLI                     ; Set last byte MSB to 0
+    LDA #$01                    ; Set A as bit index into RESULT_6504
+    STA BRBI                    ; Temporarily store off result bit index
+
+@loop:
+    LDX SharedRamOffsets,Y      ; Load then next shared RAM offset into A
+    BPL @not_last               ; If positive, don't mark off as last bye
+    LDA #$80                    ; Set last byte bool to true and store it
+    STA BLI
+    TXA                         ; Clear MSB from offset
+    AND #$7F
+    TAX
+
+@not_last:
+    LDA SHARED_RAM_START,X      ; Load the shared RAM value
+    CMP SharedRamInitValues,Y   ; Compare with the expected value
+    BEQ @check_last             ; Skip error handling if equal
+
+    ; Error handling
+    LDA BRBI
+    ORA RESULT_6504_BOOT        ; Update the result
+    STA RESULT_6504_BOOT        ; Store it
+
+@check_last:
+    LDA BLI                     ; Check if this was the last byte
+    BMI @done                   ; If MSB set, that was the final byte
+    INY                         ; Increment Y
+    ASL BRBI                    ; Shift bit index left
+    BCC @loop                   ; If not zero, continue - cheaper than JMP and
+                                ; we can rely on clear bit being clear if we
+                                ; have max 8 bytes to check
+    ; No need to alternative path - should never fall through.
+
+@done:
+    LDA #TEST_6504_BOOT         ; Mark this test as done
+    ORA TESTS_6502
+    STA TESTS_6502
+
+    LDA RESULT_6504_BOOT        ; Load the result into accumulator
+    RTS
+
 ; Attempt to take control of the 6504 processor.
 ;
 ; This is done by copying a routine to the 6504 processor to take control
@@ -659,44 +823,6 @@ check_ram_result:
 ; is a good test of that - we time out if we don't get a response indicating
 ; our takeover has succeeded.
 control_6504:
-    ; First of all, blink both DR1 and DR0 LEDs twice in quick succession
-    ; to indicate that we are about to pause the 6504.
-    LDX #$20            ; Set X to 0.25 second delay
-    LDY #$20            ; Set Y to 0.25 second delay
-    LDA #DR01_LEDS      ; Set LED pattern to DR0 and DR1 LEDs
-    JSR blink           ; Blink twice
-    JSR blink
-
-    ; Next, try to talk to the 6504.  This will send it a bump job, which should
-    ; spin the motor on one of the drive units up.  This in turn should make the
-    ; 6504 allow us to execute some code on it, which will will use to take it
-    ; over.
-    LDA #$00            ; Try to bump drive 0
-    JSR init_6504
-    BEQ @takeover       ; Success - now try to take the 6504 over
-
-    ; Takeover using drive 0 failed.  Try drive 1
-
-    ; Let's temporarily flash the drive LED to indicate the 6504 error from
-    ; bumping drive 0
-    LDY #DR0_LED
-    LDX #$20            ; flash delay
-    JSR flash_led_error
-    LDX #$00
-    JSR delay
-
-    ; Bump drive 1
-    LDA #$01            ; Try to bump drive 1
-    JSR init_6504
-    BEQ @takeover1      ; Success - now try to take the 6504 over using drive 1
-
-    ; Failed with drive 1 as well
-    BNE @failed         ; BNE uses 1 fewer byte than JMP 
-
-@takeover1:
-    LDA #$01            ; Takeover using drive 1
-@takeover:
-    ; A is now set to 0 (if drive 0 worked), or 1 (if drive 1 worked)
     JSR takeover_6504
 
     ; Check if the 6504 has paused - takeover returns A = $00 if it has, $01 if
@@ -705,62 +831,16 @@ control_6504:
     BEQ @done
 
 @failed:
-; Didn't succeed in taking over 6504 - so update the result bit (which should
-; be zero due to zero page test leaving zero page zeroed out)
-
-    ; Let's temporarily flash the both drive LEDs to indicate the 6504 error
-    LDY #DR01_LEDS
-    LDX #$20            ; flash delay
-    JSR flash_led_error
-    LDX #$00
-    JSR delay
-
-    ORA RESULT_6504     ; Mark takeover as failed
-    STA RESULT_6504
+    LDA #RESULT_6504_TO_ERR
+    STA RESULT_6504_TO  ; Mark takeover as failed
 
 @done:
     LDA #TEST_6504_TO   ; Mark this test as having been performed
     ORA TESTS_6502
-    STA TESTS_6502      ; Store result in zero page
+    STA TESTS_6502
 
     ; Done
     RTS
-
-.ifdef dont_build
-; RAM test failed.
-;
-; We flash DR0 for the lower nibble, and DR1 for the upper nibble. 
-; We flash the number of times of the upper byte top nibble (1, 2, 3 or 4).
-; Together this allows the user to identify precisely which RAM chip has
-; failed.
-;
-; Upon calling, the zero page RESULT_RAM_TEST location contains the result of
-; the RAM test, with bit 1/0 being upper/lower nibble of $1X (1 being failure)
-; bit 3/2 being $2X, etc.
-ram_error:
-    ; Figure out which DR LED to flash - accumulator contains $01 for lower
-    ; nibble test failed, $02 for upper nibble.
-    ASL A                   ; Shift left 3 times to set the DR LED to light
-    ASL A 
-    ASL A
-    TAY                     ; Store the DR LED pattern in Y
-    ; Figure out how many times to flash the DR LED
-    LDA TEST_HIGH_BYTE      ; Load A with the upper byte of the failed address
-    LSR A                   ; Shift right 4 times to get the failed chip number
-    LSR A
-    LSR A
-    LSR A
-@loop:
-    ; Flash the DR LED, with ERR on, to identify the failed RAM bank
-    LDX #$40                ; Set flash delay to 1/4 second
-    JSR flash_led_error     ; Flash the required number of times
-    ; Pause with all LEDs off for 1 second
-    LDX #$00                ; Turn off all LEDs and set delay to 1s
-    STX RIOT_UE1_PBD        ; Turn off all LEDs
-    JSR delay               ; Call delay routine
-    ; Loop back to start flashing the LEDs
-    JMP @loop
-.endif
 
 ; Subroutine to flash an LED pattern a specified number of times
 ; Input: A = number of times to flash
@@ -772,6 +852,9 @@ ram_error:
 ; Leaves ERR LED on in case the caller wants to immediately flash more LEDs
 ; without the ERR LED going out.
 flash_led_error:
+    CMP #$00            ; Check if we have a count
+    BEQ @return         ; If not, return
+
     STA NFTC            ; Store target count
     STY NFLPO           ; Store passed in LED pattern to restore later
     TYA                 ; Save LED pattern in A
@@ -798,14 +881,15 @@ flash_led_error:
     ; Restore registers - X is never modified.
     LDY NFLPO           ; Reload Y
     LDA NFTC            ; Reload A
+@return:
     RTS                 ; Return
 
-; Routine to pause for 1s, flash all drive LEDs briefly, then pause again for
-; 1s, to mark the transition from one test to the next.
+; Routine to pause for 0.5s, flash all drive LEDs briefly, then pause again for
+; 0.5s, to mark the transition from one test to the next.
 ;
 ; Destroys A, X and Y
 between_tests:
-    LDX #$00            ; Off for 1s 
+    LDX #$80            ; Off for 0.5s 
     LDY #$40            ; On for 0.25s
     LDA #DR01_LEDS      ; Set LED pattern to both drive LEDs
     JSR blink           ; Blink
@@ -858,8 +942,8 @@ blink:
 ; The timing of this routine is rough - it delays slightly under the requested
 ; time.
 delay:
-    STX DX      ; Save X register
-    STY DY      ;  Save Y register
+    STX DX          ; Save X register
+    STY DY          ;  Save Y register
 @x_loop:
     LDY #$00        ; Y will count from 0 (256 iterations)
 @y_loop:
@@ -895,25 +979,16 @@ takeover_6504:
 
 ; Copy the 6504 cmd to the shared RAM, at $1100, which is job 0.
 ;
-; Note that the max length of a code block is 256 bytes.
+; Note that the max length of a code block is 255 bytes.
 ;
 ; Will overwrite A, X and Y
 copy_6504_cmd:
-    ; Read the offset from the binary header
-    LDA CODE_6504_START     ; Get low byte of offset
-    STA CP_TEMP1            ; Store in temp pointer
-    LDA CODE_6504_START+1   ; Get high byte of offset
-    STA CP_TEMP2            ; Store in temp pointer
-
-    ; Calculate actual source address (CODE_6504_START + offset)
-    CLC                     ; Clear carry before addition
-    LDA CP_TEMP1            ; Load the low byte of the offset value
-    ADC #<CODE_6504_START   ; Add the low byte of CODE_6504_START
-    STA CP1                 ; Store result as low byte of source pointer
-    LDA CP_TEMP2            ; Load the high byte of the offset
-    ADC #>CODE_6504_START   ; Add the high byte of CODE_6504_START ($FF or
-                            ; $DF) plus any carry
-    STA CP1+1               ; Store result as high byte of source pointer
+    ; Set up the source address for the 6504 code we want to copy
+    LDA #<code_6504_start   ; Store the low byte of stored 6504 code
+    .assert <code_6504_start = $00, error, "6504 code not at $00"
+    STA CP1
+    LDA #>code_6504_start   ; Store the high byte of stored 6504 code
+    STA CP1+1
 
     ; Set up destination addresses for 6504 code we want to copy
     LDA #$00                ; Set destination to $1100
@@ -923,16 +998,13 @@ copy_6504_cmd:
 
     ; Do the copy, byte by byte.
     LDY #$00                ; Set Y to 0 as an index for the copy
-    LDX CODE_6504_CMD_LEN   ; Get the length of the command
+    .assert CODE_6504_LEN <= $FF, error, "6504 code too long"
+    LDX #CODE_6504_LEN      ; Get the length of the 6504 code
     BEQ @copy_done          ; If length is 0, we're done
 @copy_loop:
     LDA (CP1),Y             ; Load the byte from the source address
     STA (CP2),Y             ; Store it in the destination address
     INY                     ; Increment Y
-    BNE @not_wrap           ; Check if we crossed a page
-    INC CP1+1               ; If so, increment high bytes
-    INC CP2+1
-@not_wrap:
     DEX                     ; Decrement counter
     BNE @copy_loop          ; Continue until all bytes copied
 @copy_done:
@@ -947,21 +1019,26 @@ copy_6504_cmd:
 ; Returns with A = $00 if the 6504 reached the state, $01 if it is not.
 ; This also sets the Z flag in the success case.
 wait_6504_status:
-    STX CWS             ; Store the status byte to check for
+    STX WSB             ; Store the status byte to check for
     LDY #$00            ; Set Y to 0 (256) for total number of times to check
+
 @check:
-    DEY                 ; Decrement Y
-    BEQ @failure        ; If Y reached 0, 6504 didn't start reach desired state
     LDA STATUS_6504     ; Read the status byte
-    CMP CWS             ; Check if the 6504 is in desired state
+    CMP WSB             ; Check if the 6504 is in desired state
     BEQ @success
-    ; It didn't - pause for ~1/256th second
+
+    ; It isn't - pause for ~1/256th second
     LDX #$01            ; Set delay to 1/256th second
     JSR delay           ; Call delay routine
-    JMP @check          ; Loop back to check again
+
+    DEY                 ; Decrement Y
+    BNE @check          ; Still going
+    BEQ @failure        ; If we timed out, fail
+
 @success:
     LDA #$00            ; Success
     RTS                 ; Return
+
 @failure:
     ; Must be last thing that sets the Z bit in this routine.
     LDA #$01            ; Failure
@@ -1028,11 +1105,154 @@ exec_6504_job:
     JSR wait_6504_status
     RTS                         ; Return
 
+; Test the drive mechanisms, if the 6504 takeover worked
+test_drives:
+    LDA TESTS_6502
+    AND #TEST_6504_TO
+    BEQ @done               ; If not, skip to next check
+
+    LDA RESULT_6504_TO    ; Load takeover result
+    BNE @done             ; It failed - skip to next check
+
+    ; Reset the 6504 shared RAM (it was left as $00 by the last RAM test, so
+    ; only need to reset non-zero values)
+    LDA #CMD_RESULT_NONE
+    STA CMD_RESULT
+    LDA #STATUS_6504_RUNNING
+    STA STATUS_6504
+
+    ; Test both drive mechanisms
+    LDA #$01
+    JSR test_drive
+    JSR between_tests
+    
+    LDA #$00
+    JSR test_drive
+    LDA #TEST_DRIVES        ; Mark this test as attempted
+    ORA TESTS_6502
+    STA TESTS_6502
+
+@done:
+    RTS
+
+; Test one of the disk drive mechanisms
+;
+; A = 0 for drive 0, A = 1 for drive 1
+;
+; Returns A = 0 success, non-zero otherwise indicating the test step which
+; failed.
+test_drive:
+    STA TD                  ; Store drive number to test
+
+    LDA TESTS_6502
+    AND #TEST_6504_TO
+    BEQ @done
+
+    ; Check 6504 in appropriate state
+    LDA #TEST_DRIVE_CHECK   ; Set initial test status
+    STA TS
+
+    LDX #STATUS_6504_RUNNING
+    JSR wait_6504_status    ; Wait for 6504 to be in running state
+    BNE @error
+
+    JSR clear_6504_result   ; Clear any results
+
+    ; Move onto next test state - instruct 6504 to start the test
+    .assert TEST_DRIVE_STARTING = TEST_DRIVE_CHECK+1, error, "TEST_DRIVE_STARTING != TEST_DRIVE_CHECK+1"
+    INC TS                  ; Increment test state
+    LDA TD                  ; Reload drive number to test
+    STA CMD_VAR             ; Store drive to test as a command variable
+    LDA #CMD_TEST_DRIVE     ; Load the command to test the drive
+    STA CMD2                ; Store it in command 2 first so it's set when the
+                            ; 6504 sees it in CMD1
+    STA CMD1                ; Store it in command 1
+
+    ; Assuming it is running the 6504 will now go off and perform the
+    ; requested command.
+    LDX #STATUS_6504_TESTING_DRIVE
+    JSR wait_6504_status    ; Wait for up to 1s for command to start running
+    BNE @error              ; 6504 didn't start running the test
+
+    ; Increment the test state to indicate the test is running
+    .assert TEST_DRIVE_TESTING = TEST_DRIVE_STARTING+1, error, "TEST_DRIVE_TESTING != TEST_DRIVE_STARTING+1"
+    INC TS
+
+    ; Wait for the test to complete
+    LDY #TEST_DRIVE_WAIT_TIME
+    STY TWT                 ; Store wait time
+@wait:
+    LDX #STATUS_6504_RUNNING
+    JSR wait_6504_status    ; Wait for the test to complete - 6504 should move
+                            ; back to running state
+    BEQ @test_complete      ; Completed successfully
+    DEC TWT                 ; Decrement remaining wait time
+    BNE @wait               ; If not, loop back to check again
+
+    ; Otherwise fall through into error handling as we timed out
+@error:
+    LDA TS                  ; Reload test state - this is the step we failed at
+
+@complete:
+    ; Store the result in the RESULT_DRIVE0 or RESULT_DRIVE1 location as
+    ; appropriate.
+    .assert RESULT_DRIVE1 = RESULT_DRIVE0 + 1, error, "RESULT_DRIVE1 != RESULT_DRIVE0 + 1"
+    LDX TD                  ; Reload the drive number - we don't rely on
+                            ; CMD_VAR in case 6504 changed it
+    STA RESULT_DRIVE0,X     ; Store the result in the appropriate location
+    
+@done:
+    RTS
+
+@test_complete:
+    ; Check the result of the test
+    LDA CMD_RESULT          ; Load the result of the test
+    BMI @result_none        ; If negative, result is set to none
+
+    ; Have test result - set our state to OK or ERR depending on result. We do
+    ; this by adding OK or ERR (0 or 1) to the OK state (as ERR state is OK
+    ; state + 1)
+    .assert CMD_RESULT_OK = 0, error, "CMD_RESULT_OK != 0"
+    .assert CMD_RESULT_ERR = 1, error, "CMD_RESULT_ERR != 1"
+    .assert TEST_DRIVE_TESTED_ERR = TEST_DRIVE_TESTED_OK+1, error, "TEST_DRIVE_TESTED_ERR != TEST_DRIVE_TESTED_OK+1"
+    CLC
+    ADC #TEST_DRIVE_TESTED_OK   ; Set to OK or ERR based on result of 0 or 1
+    .assert TEST_DRIVE_TESTED_OK <> 0, error, "TEST_DRIVE_TESTED_OK != 0"
+    BNE @complete               ; Assert to check branch will happen
+
+    ; Strictly A could be a value which ends up making the sum 0, in which case
+    ; something went wrong - so we correctly report an error by falling through
+    ; into result_none.
+
+; Test completed but there's an error because result is set to None
+@result_none:
+    LDA #TEST_DRIVE_TESTED_ERR
+    .assert TEST_DRIVE_TESTED_ERR <> 0, error, "TEST_DRIVE_TESTED_ERR != 0"
+    BNE @complete               ; Assert to check branch will happen
+
+; Clears the 6504 command result data
+;
+; Typically done before running a command.
+;
+; Destroys X
+clear_6504_result:
+    LDX #CMD_RESULT_NONE    ; Clear command result
+    STX CMD_RESULT
+
+    LDX #CMD_NONE           ; Clear result command      
+    STX CMD_RESULT_CMD
+
+    RTS
+
 ; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
 ; to copy the routine(s) we want from this binary to the shared RAM and then
 ; have the 6504 execute it.
 .segment "CODE_6504"
+code_6504_start:
 .incbin "diag_x040_6504.bin"
+code_6504_end:
+
+CODE_6504_LEN = code_6504_end - code_6504_start
 
 ; If we're installed as the $F000 ROM, we need to provide a jump vector to
 ; START.

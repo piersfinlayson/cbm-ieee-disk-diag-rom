@@ -53,12 +53,15 @@ RESC_RTN = TEMP_RTN_B   ; get_error_shift_count - how much to shift error
 RP1 = TEMP_PTR1         ; test_ram_page - pointer to ram test table 
 RP2 = TEMP_PTR2         ; test_ram_byte(_pattern) - pointer to byte under test
 
+; Used by routines to check 6504 booted
+BRBI = TEMP_A           ; check_6504_booted - result bit index
+BLI = TEMP_B            ; check_6504_booted - last byte indicator
+
 ; Used by routines to control 6504
-CWS = TEMP_A            ; wait_6504_status - status to wait for
 CP1 = TEMP_PTR1         ; copy_6504_cmd - pointer to code source
 CP2 = TEMP_PTR2         ; copy_6504_cmd - pointer to code destination
-CP_TEMP1 = TEMP_Y        ; copy_6504_cmd
-CP_TEMP2 = TEMP_Z        ; copy_6504_cmd
+CP_TEMP1 = TEMP_Y       ; copy_6504_cmd
+CP_TEMP2 = TEMP_Z       ; copy_6504_cmd
 
 ; Used by notification routines
 NFTC = TEMP_A           ; flash_led_error - notification flash target count
@@ -68,6 +71,11 @@ NRZP = TEMP_X           ; finished - temporary ZP result value
 NRCC = TEMP_X           ; finished - temporary RAM chip count value
 NRNCN = TEMP_Y          ; finished - temporary RAM nibble chip number value
 NRCR = TEMP_Z           ; finished - temporary RAM chip result value
+
+; Used by drive test routine
+TS = TEMP_A             ; test_drive - drive test state
+TWT = TEMP_B            ; test_drive - wait time
+TD = TEMP_C             ; test_drive - drive number  
 
 ; Uniquely assigned temporary storage locations.  These are uniquely assigned
 ; to specific routines, as these routines use is widespread.
@@ -80,7 +88,10 @@ DY = $0D + ZP_OFFSET
 BX = $0E + ZP_OFFSET
 BY = $0F + ZP_OFFSET
 
-; Reserved for future temporary use: $10-$1F
+; Used by wait_6504_status
+WSB = $10 + ZP_OFFSET   ; wait_6504_status byte
+
+; Reserved for future temporary use: $11-$1F
 
 ; Used to track which tests have been performed by the 6502 code.  See the
 ; TEST_* values in constant_6502.inc for the tests that are performed for the
@@ -99,7 +110,15 @@ DEVICE_ID = $22 + ZP_OFFSET
 ; Bits 7/6 cover $4000-$43FF - 0 success, 1 failure
 RESULT_RAM_TEST = $23 + ZP_OFFSET
 
-; Used to store test results from the 6504.
+; Used to store test results from check_6504_booted.
 ; - Bit 0 contains 0 if successful, 1 if failure - see TESTS_6502
 ;   for whether this has been attempted (and hence this bit is valid)
-RESULT_6504 = $24 + ZP_OFFSET
+RESULT_6504_BOOT = $24 + ZP_OFFSET
+
+; Used to store test results from control_6504.
+RESULT_6504_TO = $25 + ZP_OFFSET
+
+; Used to store test results from test_drive.
+RESULT_DRIVE0 = $26 + ZP_OFFSET
+RESULT_DRIVE1 = $27 + ZP_OFFSET
+
