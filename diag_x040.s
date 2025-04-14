@@ -162,15 +162,7 @@ with_stack_main:
 
     JSR between_tests
 
-    ; Run first RAM test - this tests all static RAM expect that which the
-    ; 6504 might be accessing ($1000-$10FF).
-    LDX #<RamTest1          ; Load low byte of test table address
-    LDY #>RamTest1          ; Load high byte of test table address
-    JSR test_ram_table      ; Call routine to test the RAM
-    LDA #TEST_RAM1          ; Mark this test as having been performed
-    ORA TESTS_6502
-    STA TESTS_6502          ; Store result in zero page
-    JSR check_ram_result    ; Check we can continue
+    JSR test_ram_table_1:
 
     JSR between_tests
 
@@ -188,22 +180,7 @@ with_stack_main:
     JSR between_tests
 
 @6504_failed:
-    ; Run the second RAM test - this tests $1000-$10FF, which is used by the
-    ; stock 6504 ROM from start of day, now we've tested the 6504, and
-    ; attempted to take control of it.  If we failed in either case it's likely
-    ; the 6504 isn't running anyway, so overwriting the shared RAM isn't an
-    ; issue.
-    LDX #<RamTest2          ; Load low byte of test table address
-    LDY #>RamTest2          ; Load high byte of test table address
-    JSR test_ram_table      ; Call routine to test the RAM
-    LDA #TEST_RAM2          ; Mark this test as having been performed
-    ORA TESTS_6502
-    STA TESTS_6502          ; Store result in zero page
-    JSR check_ram_result    ; Check we can continue
-
-    JSR between_tests
-
-    JSR test_drives
+    JSR test_ram_table_2
 
     JSR between_tests
 
@@ -502,6 +479,41 @@ report_dev_id:
 
 @done:
     JSR between_reports ; pause for 1s with all LEDs off
+    RTS
+
+; Run first RAM test - this tests all static RAM expect that which the 6504
+; might be accessing ($1000-$10FF).
+test_ram_table_1:
+    LDX #<RamTest1          ; Load low byte of test table address
+    LDY #>RamTest1          ; Load high byte of test table address
+    JSR test_ram_table      ; Call routine to test the RAM
+    LDA #TEST_RAM1          ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502          ; Store result in zero page
+
+    JSR check_ram_result    ; Check we can continue - won't return if not
+
+    RTS
+
+; Run the second RAM test - this tests $1000-$10FF, which is used by the stock
+; 6504 ROM from start of day, now we've tested the 6504, and attempted to take
+; control of it.  If we failed in either case it's likely the 6504 isn't
+; running anyway, so overwriting the shared RAM isn't an issue.
+;
+; After this, reset the shared RAM back to how it would have been
+test_ram_table_2:
+    LDX #<RamTest2          ; Load low byte of test table address
+    LDY #>RamTest2          ; Load high byte of test table address
+    JSR test_ram_table      ; Call routine to test the RAM
+    LDA #TEST_RAM2          ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502          ; Store result in zero page
+
+    JSR check_ram_result    ; Check we can continue - won't return if not
+
+    JSR reset_shared_ram    ; This RAM test has changed some of the shared RAM
+                            ; used by our 6504 routine.  So set it back
+
     RTS
 
 ; Routine to tests a table of RAM pages.
@@ -1105,14 +1117,46 @@ exec_6504_job:
     JSR wait_6504_status
     RTS                         ; Return
 
-; Test the drive mechanisms, if the 6504 takeover worked
-test_drives:
+; Returns A=0 if the 6504 takeover succeeded
+;
+; If A != 0 it skips whether it is in running state
+check_takeover:
+    STA CTA                 ; Store argument
+
+    ; Check if test was attempted - TEST_6502 has 1 if it was
     LDA TESTS_6502
     AND #TEST_6504_TO
-    BEQ @done               ; If not, skip to next check
+    BEQ @failed             ; It wasn't attempted
+    
+    ; Check if it succeeded - RESULT_6504_TO has 0 if it did
+    LDA RESULT_6504_TO
+    .assert RESULT_6504_TO_OK = 0, error, "RESULT_6504_TO_OK != 0"
+    BNE @failed             ; It failed 
 
-    LDA RESULT_6504_TO    ; Load takeover result
-    BNE @done             ; It failed - skip to next check
+    ; Check if the 6504 is in the running state
+    LDA CTA
+    BNE @success            ; If A is non-zero we skip this test
+    LDA #STATUS_6504_RUNNING
+    CMP STATUS_6504
+    BNE @failed             ; It's not running
+
+@success:
+    LDA #$00                ; May be non-zero if branched here
+    RTS
+
+@failed:
+    LDA #$01
+    RTS
+
+; Reset the shared RAM, used by the 6504 routine, after the $1000-$10FF RAM
+; test
+;
+; Only bothers doing this if the 6504 takeover worked
+reset_shared_ram:
+    LDA #$01                ; Don't check the shared RAM as part of checking if
+                            ; takeover suceeeded
+    JSR check_takeover
+    BNE @done               ; Takeover failed - don't bother resetting
 
     ; Reset the 6504 shared RAM (it was left as $00 by the last RAM test, so
     ; only need to reset non-zero values)
@@ -1121,14 +1165,27 @@ test_drives:
     LDA #STATUS_6504_RUNNING
     STA STATUS_6504
 
-    ; Test both drive mechanisms
-    LDA #$01
+@done:
+    RTS
+
+; Test the drive mechanisms, if the 6504 takeover worked
+test_drives:
+    LDA #$00                ; Check shared RAM as part of checking if the
+                            ; takeover succeeded
+    JSR check_takeover  
+    BNE @done
+
+    ; Test drive 0
+    LDA #$00
     JSR test_drive
     JSR between_tests
     
-    LDA #$00
+    ; Then drive 1
+    LDA #$01
     JSR test_drive
-    LDA #TEST_DRIVES        ; Mark this test as attempted
+
+    ; Mark this test as attempted
+    LDA #TEST_DRIVES
     ORA TESTS_6502
     STA TESTS_6502
 
@@ -1142,93 +1199,10 @@ test_drives:
 ; Returns A = 0 success, non-zero otherwise indicating the test step which
 ; failed.
 test_drive:
-    STA TD                  ; Store drive number to test
-
-    LDA TESTS_6502
-    AND #TEST_6504_TO
-    BEQ @done
-
-    ; Check 6504 in appropriate state
-    LDA #TEST_DRIVE_CHECK   ; Set initial test status
-    STA TS
-
-    LDX #STATUS_6504_RUNNING
-    JSR wait_6504_status    ; Wait for 6504 to be in running state
-    BNE @error
-
-    JSR clear_6504_result   ; Clear any results
-
-    ; Move onto next test state - instruct 6504 to start the test
-    .assert TEST_DRIVE_STARTING = TEST_DRIVE_CHECK+1, error, "TEST_DRIVE_STARTING != TEST_DRIVE_CHECK+1"
-    INC TS                  ; Increment test state
-    LDA TD                  ; Reload drive number to test
-    STA CMD_VAR             ; Store drive to test as a command variable
-    LDA #CMD_TEST_DRIVE     ; Load the command to test the drive
-    STA CMD2                ; Store it in command 2 first so it's set when the
-                            ; 6504 sees it in CMD1
-    STA CMD1                ; Store it in command 1
-
-    ; Assuming it is running the 6504 will now go off and perform the
-    ; requested command.
-    LDX #STATUS_6504_TESTING_DRIVE
-    JSR wait_6504_status    ; Wait for up to 1s for command to start running
-    BNE @error              ; 6504 didn't start running the test
-
-    ; Increment the test state to indicate the test is running
-    .assert TEST_DRIVE_TESTING = TEST_DRIVE_STARTING+1, error, "TEST_DRIVE_TESTING != TEST_DRIVE_STARTING+1"
-    INC TS
-
-    ; Wait for the test to complete
-    LDY #TEST_DRIVE_WAIT_TIME
-    STY TWT                 ; Store wait time
-@wait:
-    LDX #STATUS_6504_RUNNING
-    JSR wait_6504_status    ; Wait for the test to complete - 6504 should move
-                            ; back to running state
-    BEQ @test_complete      ; Completed successfully
-    DEC TWT                 ; Decrement remaining wait time
-    BNE @wait               ; If not, loop back to check again
-
-    ; Otherwise fall through into error handling as we timed out
-@error:
-    LDA TS                  ; Reload test state - this is the step we failed at
-
-@complete:
-    ; Store the result in the RESULT_DRIVE0 or RESULT_DRIVE1 location as
-    ; appropriate.
-    .assert RESULT_DRIVE1 = RESULT_DRIVE0 + 1, error, "RESULT_DRIVE1 != RESULT_DRIVE0 + 1"
-    LDX TD                  ; Reload the drive number - we don't rely on
-                            ; CMD_VAR in case 6504 changed it
-    STA RESULT_DRIVE0,X     ; Store the result in the appropriate location
-    
-@done:
+    TXA
+    LDA #$01            ; Mark as failed for now
+    STA RESULT_DRIVE0,X 
     RTS
-
-@test_complete:
-    ; Check the result of the test
-    LDA CMD_RESULT          ; Load the result of the test
-    BMI @result_none        ; If negative, result is set to none
-
-    ; Have test result - set our state to OK or ERR depending on result. We do
-    ; this by adding OK or ERR (0 or 1) to the OK state (as ERR state is OK
-    ; state + 1)
-    .assert CMD_RESULT_OK = 0, error, "CMD_RESULT_OK != 0"
-    .assert CMD_RESULT_ERR = 1, error, "CMD_RESULT_ERR != 1"
-    .assert TEST_DRIVE_TESTED_ERR = TEST_DRIVE_TESTED_OK+1, error, "TEST_DRIVE_TESTED_ERR != TEST_DRIVE_TESTED_OK+1"
-    CLC
-    ADC #TEST_DRIVE_TESTED_OK   ; Set to OK or ERR based on result of 0 or 1
-    .assert TEST_DRIVE_TESTED_OK <> 0, error, "TEST_DRIVE_TESTED_OK != 0"
-    BNE @complete               ; Assert to check branch will happen
-
-    ; Strictly A could be a value which ends up making the sum 0, in which case
-    ; something went wrong - so we correctly report an error by falling through
-    ; into result_none.
-
-; Test completed but there's an error because result is set to None
-@result_none:
-    LDA #TEST_DRIVE_TESTED_ERR
-    .assert TEST_DRIVE_TESTED_ERR <> 0, error, "TEST_DRIVE_TESTED_ERR != 0"
-    BNE @complete               ; Assert to check branch will happen
 
 ; Clears the 6504 command result data
 ;

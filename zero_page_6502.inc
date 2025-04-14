@@ -91,6 +91,9 @@ BY = $0F + ZP_OFFSET
 ; Used by wait_6504_status
 WSB = $10 + ZP_OFFSET   ; wait_6504_status byte
 
+; Used by check_takover
+CTA = $11 + ZP_OFFSET   ; check_takover - temporary A
+
 ; Reserved for future temporary use: $11-$1F
 
 ; Used to track which tests have been performed by the 6502 code.  See the
