@@ -1243,9 +1243,16 @@ ieee_irq_handler:
     PHA
     TYA
     PHA
+    LDA RIOT_UE1_PBD        ; Store off LED state
+    AND #$38
+    PHA
     
     ; Clear interrupt flag
     LDA RIOT_UE1_ATNPE
+
+    ; Turn on DR0 and DR1 LEDs to show we're in the interrupt handler
+    LDA #DR01_LEDS
+    STA RIOT_UE1_PBD        ; Set LED pattern to both drive LEDs, solid on
     
     ; Prepare control lines
     LDA #$18                ; DAVO+EOIO
@@ -1322,6 +1329,8 @@ ieee_irq_handler:
 
 @atn_exit:
     ; Restore registers
+    PLA
+    STA RIOT_UE1_PBD        ; Restore LED state
     PLA
     TAY
     PLA
