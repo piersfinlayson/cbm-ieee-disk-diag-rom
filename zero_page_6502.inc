@@ -125,3 +125,31 @@ RESULT_6504_TO = $25 + ZP_OFFSET
 RESULT_DRIVE0 = $26 + ZP_OFFSET
 RESULT_DRIVE1 = $27 + ZP_OFFSET
 
+; Reserved for future use: $28-$2D
+
+; Used to dynamically change the interrupt handler - must be set before
+; enabling interrupts
+IRQ_HANDLER = $2E + ZP_OFFSET   ; And $2F
+
+; Used by IEEE-488 routines
+
+TALK_ADDR = $30 + ZP_OFFSET
+LISTEN_ADDR = $31 + ZP_OFFSET
+IEEE_DATA_BYTE = $32 + ZP_OFFSET
+IEEE_EOI_FLAG = $33 + ZP_OFFSET
+IEEE_LISTEN_ACTIVE = $34 + ZP_OFFSET
+IEEE_TALK_ACTIVE = $35 + ZP_OFFSET
+IEEE_ADDRESSED = $36 + ZP_OFFSET
+IEEE_SEC_ADDR = $37 + ZP_OFFSET
+IEEE_ORIG_SEC_ADDR = $38 + ZP_OFFSET
+IEEE_CHAR = $39 + ZP_OFFSET
+IEEE_CMD_BUF_LEN = $3A + ZP_OFFSET
+IEEE_CMD_WAITING = $3B + ZP_OFFSET
+
+; Not strictly a zero page address - used for the IEEE command buffer.  We
+; chose $1200 as in the first bank of RAM, which we know is good if we get to
+; IEEE handling - as we would have errored out earlier otherwise.
+IEEE_CMD_BUF = $1200
+
+; Again, not a zero page address - used for diags to send.
+IEEE_DIAG_BUF = $1300

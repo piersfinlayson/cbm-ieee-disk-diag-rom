@@ -40,6 +40,7 @@ RESERVED = $00
                         ; us.
 
 .segment "DATA"
+piers_rocks: .byte 'p', 'i', 'e', 'r', 's', '.', 'r', 'o', 'c', 'k', 's' | $80
 CopyrightString: .asciiz "(c) 2025 Piers Finlayson"
 RepoString: .asciiz "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
 
@@ -194,6 +195,10 @@ with_stack_main:
     JSR ram_test
 
     JSR between_tests
+
+    ; Initialize the IEEE stack
+    JSR create_diag_msg
+    JSR ieee_init    
 
     JMP finished
 with_stack_main_end:
@@ -939,10 +944,6 @@ delay:
     LDY DY          ; Restore Y register
     RTS             ; 6 cycles
 
-; Our no-op interrupt handler
-empty_handler:
-    RTI
-
 ; Attempts to takeover the 6504 processor.
 ;
 ; No inputs
@@ -1185,6 +1186,345 @@ clear_6504_result:
 
     RTS
 
+; Set diagnostics message
+;
+; We need to create the diagnostics message we will send if we are connected
+; to via IEEE-488
+create_diag_msg:
+    LDX #$00                ; Create index
+@next_byte:
+    LDA piers_rocks,X       ; Get next byte
+    STA IEEE_DIAG_BUF,X     ; Store it in the buffer   
+    BMI @done               ; If negative, we're done
+    INX
+    BPL @next_byte          ; Continue
+@done:
+    RTS
+
+; Initialise the IEEE-488 ports and computes device ID
+;
+; Destroys A
+ieee_init:
+    ; Initialize ports
+    LDA #$FF
+    STA IEEE_DATA_PORT      ; Set data lines high
+    STA IEEE_DATA_DIR       ; Set data line directions to outputs
+    LDA #$1C
+    STA IEEE_CONTROL        ; Set RFDO, EOIO, DAVO high 
+    LDA #$1F
+    STA IEEE_CONTROL_DIR    ; Set lines 0-4 to outputs, 5-7 to inputs
+
+    ; Compute device ID - we will retrieve from hardware again, as cheaper
+    LDA RIOT_UE1_PBD
+    AND #$07                ; Mask off the bits we don't want
+    ORA #$48                ; Create talk address adding 8 and ORing with $40
+    STA TALK_ADDR
+    EOR #$60                ; Create listen address
+    STA LISTEN_ADDR
+
+    ; Enable ATN interrupts
+    LDA #$0A                ; Value used in original ROM
+    STA RIOT_UE1_ATNPE      ; Enable ATN to generate interrupts
+
+    ; Set interrupt handler and enable interrupts
+    SEI
+    LDA #<ieee_irq_handler
+    STA IRQ_HANDLER
+    LDA #>ieee_irq_handler
+    STA IRQ_HANDLER+1
+    CLI                     
+    RTS
+
+; IEEE-488 ATN interrupt handler
+ieee_irq_handler:
+    ; Save registers
+    PHA
+    TXA
+    PHA
+    TYA
+    PHA
+    
+    ; Clear interrupt flag
+    LDA RIOT_UE1_ATNPE
+    
+    ; Prepare control lines
+    LDA #$18                ; DAVO+EOIO
+    ORA IEEE_CONTROL        ; Free control lines
+    STA IEEE_CONTROL
+    
+    LDA #$FF
+    STA IEEE_DATA_PORT      ; Clear data lines
+    
+    ; ATN sequence - wait for commands
+    LDA #$07                ; DACO, RFDO, ATNA
+    ORA IEEE_CONTROL
+    STA IEEE_CONTROL
+
+@atn_wait:
+    BIT IEEE_CONTROL
+    BVC @atn_get_cmd        ; DAV low - command ready
+    BMI @atn_wait           ; ATN still low
+    BPL @atn_end            ; ATN went high - end of command sequence
+
+@atn_get_cmd:
+    LDA #$FB                ; Set NRFD low
+    AND IEEE_CONTROL
+    STA IEEE_CONTROL
+    
+    AND #$20                ; Save EOI input state
+    STA IEEE_EOI_FLAG
+    
+    LDA IEEE_DATA_PORT      ; Get data from bus
+    EOR #$FF                ; Invert (IEEE is negative logic)
+    STA IEEE_DATA_BYTE      ; Save command byte
+    
+    LDA #$FD                ; Set NDAC low
+    AND IEEE_CONTROL
+    STA IEEE_CONTROL
+    
+    ; Process command byte
+    LDY #$00
+    LDA IEEE_DATA_BYTE
+    AND #$60               ; Check command type
+    CMP #$40               ; Check if TALK
+    BEQ @handle_talk
+    CMP #$20               ; Check if LISTEN
+    BEQ @handle_listen
+    CMP #$60               ; Check if SECONDARY
+    BEQ @handle_secondary
+    BNE @atn_next          ; OTHER command
+
+@atn_end:
+    ; ATN is now high - check if we were addressed
+    LDA IEEE_LISTEN_ACTIVE
+    BEQ @check_talk        ; Not listener
+    
+    ; We're listener - prepare for data transfer
+    LDA #$FA               ; Set ATN and NRFD low
+    AND IEEE_CONTROL
+    STA IEEE_CONTROL
+    
+    ; Call listen handler
+    JSR listen_handler
+    JMP @atn_exit
+
+@check_talk:
+    LDA IEEE_TALK_ACTIVE
+    BEQ @atn_exit          ; Not talker
+    
+    ; We're talker - prepare for data transfer  
+    LDA #$FC               ; Clear ATN and NDAC
+    AND IEEE_CONTROL
+    STA IEEE_CONTROL
+    
+    ; Call talk handler
+    JSR talk_handler
+
+@atn_exit:
+    ; Restore registers
+    PLA
+    TAY
+    PLA
+    TAX
+    PLA
+    RTI
+
+@handle_listen:
+    LDA IEEE_DATA_BYTE
+    CMP LISTEN_ADDR
+    BEQ @our_listen         ; Liasten is for our listen address
+    CMP #$3F                ; Was this an UNLISTEN?
+    BNE @not_addressed      ; Branch if not - it wasn't for us
+    STY IEEE_LISTEN_ACTIVE  ; Clear listen active
+    BEQ @not_addressed      ; Branch always - as we set Y to 0 before this
+    
+@our_listen:
+    STA IEEE_LISTEN_ACTIVE  ; Set listen active
+    STY IEEE_TALK_ACTIVE    ; Clear talk active
+    LDA #$20
+    STA IEEE_SEC_ADDR       ; Default secondary address
+    STA IEEE_ORIG_SEC_ADDR
+    STA IEEE_ADDRESSED      ; Mark as addressed
+    BNE @atn_next           ; Branch always, as A non-zero
+
+@handle_talk:
+    STY IEEE_TALK_ACTIVE    ; Clear talk active
+    LDA IEEE_DATA_BYTE
+    CMP TALK_ADDR
+    BNE @not_addressed
+    STA IEEE_TALK_ACTIVE    ; Set talk active
+    STY IEEE_LISTEN_ACTIVE  ; Clear listen active
+    LDA #$20
+    STA IEEE_SEC_ADDR       ; Default secondary address
+    STA IEEE_ORIG_SEC_ADDR
+    STA IEEE_ADDRESSED      ; Mark as addressed
+    BEQ @atn_next           ; Branch always (always Z=1 here)
+
+@handle_secondary:
+    LDA IEEE_ADDRESSED
+    BEQ @atn_next           ; Not addressed, ignore
+    LDA IEEE_DATA_BYTE
+    STA IEEE_ORIG_SEC_ADDR  ; Store original SA
+    PHA
+    AND #$0F
+    STA IEEE_SEC_ADDR       ; Extract SA bits 0-3
+    PLA
+    AND #$F0                ; Check for close command
+    CMP #$E0                ; Is it close?
+    BNE @atn_next
+    JSR close_channel       ; Handle close command
+    
+@not_addressed:
+    STY IEEE_ADDRESSED      ; Clear addressed flag
+
+@atn_next:
+    BIT IEEE_CONTROL        ; Wait for DAV high
+    BVC @atn_next
+    JMP @atn_wait           ; Get next command byte
+
+; Close channel implementation
+close_channel:
+    ; Close the channel specified in IEEE_SEC_ADDR
+    ; For diagnostics, you may just clear channel status
+    LDA IEEE_SEC_ADDR
+    CMP #$0F               ; Command channel?
+    BNE @normal_close
+
+    ; Handle command channel close
+    ; For diagnostics you might want to reset command buffer
+    LDA #$00
+    STA IEEE_CMD_BUF_LEN
+    RTS
+
+    ; Handle command channel close
+@normal_close:
+    RTS
+
+; Handle incoming data as listener
+listen_handler:
+    LDA IEEE_SEC_ADDR       ; Check which channel
+    CMP #$0F                ; Command channel?
+    BEQ @cmd_listen         ; Handle command channel
+    ; Other channels not implemented
+    RTS
+
+@cmd_listen:
+    ; Receive command into buffer
+    LDX #$00
+@cmd_receive_loop:
+    JSR receive_byte        ; Get a byte from IEEE bus
+    STA IEEE_CMD_BUF,X      ; Store in command buffer
+    INX
+    LDA IEEE_EOI_FLAG       ; Check if EOI was set
+    BEQ @cmd_receive_loop   ; If not, get more bytes
+    
+    STX IEEE_CMD_BUF_LEN    ; Store length
+    LDA #$01
+    STA IEEE_CMD_WAITING    ; Set command waiting flag
+    RTS
+
+; Handle outgoing data as talker  
+talk_handler:
+    LDA IEEE_SEC_ADDR       ; Check which channel
+    CMP #$0F                ; Command channel?
+    BEQ @cmd_talk           ; Handle command channel
+    ; Other channels not implemented
+    RTS
+
+@cmd_talk:
+    ; Send diagnostic status
+    LDX #$00
+@cmd_send_loop:
+    LDA IEEE_DIAG_BUF,X     ; Load from diags message
+    BMI @last_byte          ; Last byte has MSB set
+    JSR send_byte           ; Send the byte
+    INX
+    BNE @cmd_send_loop
+
+@last_byte:
+    JSR send_byte
+    RTS
+
+; Receive a byte from the IEEE bus
+receive_byte:
+    ; Wait for DAV low
+@wait_dav_low:
+    BIT IEEE_CONTROL
+    BVS @wait_dav_low
+    
+    ; Read data
+    LDA IEEE_DATA_PORT
+    EOR #$FF                ; Invert it
+    PHA                     ; Save data byte
+    
+    ; Acknowledge with NDAC low (high as inverted)
+    LDA #$02                ; Set NDAC high
+    ORA IEEE_CONTROL
+    STA IEEE_CONTROL
+    
+    ; Signal ready for next byte with NRFD high
+    LDA #$04                ; NRFD high
+    ORA IEEE_CONTROL  
+    STA IEEE_CONTROL
+    
+    ; Wait for DAV high
+@wait_dav_high:
+    BIT IEEE_CONTROL
+    BVC @wait_dav_high
+    
+    ; Retrieve and return data byte
+    PLA
+    RTS
+
+; Send a byte over the IEEE bus - it's in A
+send_byte:
+    ; Wait for NRFD high
+@wait_nrfd_high:
+    BIT RIOT_UE1_PBD
+    BPL @wait_nrfd_high
+    
+    ; Put data on the bus
+    PHA                     ; Keep a copy for EOI check
+    AND #$7F                ; Clear top bit if set
+    EOR #$FF                ; Invert for IEEE bus
+    STA IEEE_DATA_PORT
+    
+    ; Check if last byte
+    PLA
+    BMI @with_eoi
+
+    ; Regular byte - set EOIO high, DAVO low
+    LDA IEEE_CONTROL
+    AND #$EF                ; Clear DAVO (bit 4) only
+    STA IEEE_CONTROL
+    JMP @wait_ack
+    
+@with_eoi:
+    ; Last byte - set EOIO low (EOI asserted), DAVO low
+    LDA IEEE_CONTROL
+    AND #$E7                ; Clear both EOIO (bit 3) and DAVO (bit 4)
+    STA IEEE_CONTROL
+    
+@wait_ack:
+    ; Wait for NDAC high
+    BIT RIOT_UE1_PBD
+    BVC @wait_ack
+    
+    ; Release data lines
+    LDA #$18                ; Set EOIO (bit 3) and DAVO (bit 4) high
+    ORA IEEE_CONTROL
+    STA IEEE_CONTROL
+    
+    RTS
+
+; Our no-op NMI handler
+nmi_handler:
+    RTI
+
+; Our IRQ handler
+irq_handler:
+    JMP (IRQ_HANDLER)   ; Indirect jump to handler address stored in zero page
+
 ; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
 ; to copy the routine(s) we want from this binary to the shared RAM and then
 ; have the 6504 execute it.
@@ -1198,6 +1538,6 @@ CODE_6504_LEN = code_6504_end - code_6504_start
 ; If we're installed as the $F000 ROM, we need to provide a jump vector to
 ; START.
 .segment "VECTORS"
-.addr empty_handler ; NMI handler
+.addr nmi_handler   ; NMI handler
 .addr start
-.addr empty_handler ; IRQ handler
+.addr irq_handler   ; IRQ handler

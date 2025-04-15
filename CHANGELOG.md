@@ -2,7 +2,8 @@
 
 ## 0.1.5
 
-
+- Add simple IEEE-488 stack.
+- Send diagnostics message when user connects using configured device ID, channel 15 and instructs device to TALK.
 
 ## 0.1.4
 
@@ -23,7 +24,7 @@ Substantial rewrite, including:
 - Moving RAM test patterns to be table driven for better extensibility
 - Retrieve device ID early on in processing
 - Adding ability to detetct and report multiple errors, and device ID 
- - Tidying up main, stack supported, code making it easier to see overall program execution flow - see with_stack_main:
+- Tidying up main, stack supported, code making it easier to see overall program execution flow - see with_stack_main:
 
 ## 0.1.1
 
