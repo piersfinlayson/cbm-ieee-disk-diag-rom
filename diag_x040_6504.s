@@ -54,12 +54,15 @@ control:
 
     ; Check whether CMD1 is set to a valid command
     LDA CMD1
+.ifdef TEST_DRIVE    
     CMP #CMD_TEST_DRIVE
     BEQ @test_drive_check
+.endif
     CMP #CMD_RESET
     BEQ @reset_check
     BNE @main_loop          ; If not, loop back and check again
 
+.ifdef TEST_DRIVE    
 ; Test drive
 @test_drive_check:
     ; Check if CMD2 is also set to run
@@ -72,6 +75,7 @@ control:
 
     ; Done, jump back to main loop
     JMP @main_loop
+.endif
 
 ; Reset command
 @reset_check:
@@ -88,6 +92,7 @@ reset:
     STA STATUS_6504
     JMP (RESET)
 
+.ifdef TEST_DRIVE
 test_drive:
     ; Load command variable (drive number) before anything else in case it
     ; gets changed by 6502 shortly
@@ -181,3 +186,4 @@ delay:
 ; VIA_B_OUT bits to control drive motor for drives 0 and 1
 motor_bits:
     .byte $A0, $50
+.endif
