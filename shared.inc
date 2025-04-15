@@ -49,6 +49,19 @@ CMD_RESULT = SHARED_RAM_START + $F4
 ; Command this result refers to.
 CMD_RESULT_CMD = SHARED_RAM_START + $F5
 
+
+.ifdef CPU_6502
+; Used for the IEEE command buffer.
+; We chose $1200 as in the first bank of RAM, which we know is good if we get
+; to IEEE handling - as we would have errored out earlier otherwise.
+IEEE_CMD_BUF = $1200
+
+; Used for diagnostics string to send.
+; Again, we chose $1300 as in the first bank of RAM.
+IEEE_DIAG_BUF = $1300
+.endif
+
+
 CMD_RESULT_NONE = $80
 CMD_RESULT_OK = $00
 CMD_RESULT_ERR = $01

@@ -145,11 +145,3 @@ IEEE_ORIG_SEC_ADDR = $38 + ZP_OFFSET
 IEEE_CHAR = $39 + ZP_OFFSET
 IEEE_CMD_BUF_LEN = $3A + ZP_OFFSET
 IEEE_CMD_WAITING = $3B + ZP_OFFSET
-
-; Not strictly a zero page address - used for the IEEE command buffer.  We
-; chose $1200 as in the first bank of RAM, which we know is good if we get to
-; IEEE handling - as we would have errored out earlier otherwise.
-IEEE_CMD_BUF = $1200
-
-; Again, not a zero page address - used for diags to send.
-IEEE_DIAG_BUF = $1300
