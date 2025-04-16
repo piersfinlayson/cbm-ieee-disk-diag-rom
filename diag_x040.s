@@ -1312,7 +1312,7 @@ ieee_irq_handler:
     BEQ @handle_listen
     CMP #$60                ; Check if SECONDARY command
     BEQ @handle_secondary
-    BNE @atn_next           ; OTHER command
+    JMP @atn_next           ; OTHER command
 
 ; Now ATN has been raised, see if we have any work to do.
 @atn_end:
@@ -1321,7 +1321,7 @@ ieee_irq_handler:
     BEQ @check_talk         ; Not listener - branch to see if we're talker
     
     ; We're listener - prepare for data transfer
-    LDA #$FA                ; Set ATN and NRFD low
+    LDA #$FA                ; Set ATNA and NRFD low
     AND IEEE_CONTROL
     STA IEEE_CONTROL
     
@@ -1341,6 +1341,11 @@ ieee_irq_handler:
     
     ; Call talk handler
     JSR talk_handler
+
+    ; Reset control lines to idle state after talk_handler
+    LDA #$07                ; ~DACO, RFDO, ATNA all high
+    ORA IEEE_CONTROL
+    STA IEEE_CONTROL
 
 @atn_exit:
     ; Restore registers
@@ -1373,6 +1378,12 @@ ieee_irq_handler:
 
 @handle_talk:
     STY IEEE_TALK_ACTIVE    ; Clear talk active (Y is set to zero before this)
+
+    ; Set just the LED for drive 0 to show we got here
+    LDA #DR0_LED
+    STA RIOT_UE1_PBD
+
+
     LDA IEEE_DATA_BYTE      ; Get our data byte
     CMP TALK_ADDR           ; Compare with our TALK address
     BNE @not_addressed
@@ -1532,7 +1543,7 @@ send_byte:
     STA IEEE_CONTROL
 
 @wait_ack:
-    ; Wait for NDAC high (DACI - note this is Port B)  XXXX got to here
+    ; Wait for NDAC high (DACI - note this is Port B)
     BIT RIOT_UE1_PBD
     BVC @wait_ack
     
