@@ -1269,7 +1269,7 @@ ieee_irq_handler:
     STA IEEE_CONTROL
     
     LDA #$FF                ; Clear data lines
-    STA IEEE_DATA_PORT
+    STA IEEE_DATA_OUT_PORT
     
 @atn_wait:
     ; ATN sequence - wait for commands
@@ -1294,7 +1294,7 @@ ieee_irq_handler:
     AND #$20                ; Save EOI input state
     STA IEEE_EOI_FLAG
     
-    LDA IEEE_DATA_PORT      ; Get data from bus
+    LDA IEEE_DATA_IN_PORT   ; Get data from bus
     EOR #$FF                ; Invert (IEEE is negative logic)
     STA IEEE_DATA_BYTE      ; Save command byte
     
@@ -1477,7 +1477,7 @@ receive_byte:
     BVS @wait_dav_low
     
     ; Read data
-    LDA IEEE_DATA_PORT
+    LDA IEEE_DATA_IN_PORT
     EOR #$FF                ; Invert it
     PHA                     ; Save data byte
     
@@ -1511,7 +1511,7 @@ send_byte:
     PHA                     ; Keep a copy for EOI check
     AND #$7F                ; Clear top bit if set
     EOR #$FF                ; Invert for IEEE bus
-    STA IEEE_DATA_PORT
+    STA IEEE_DATA_OUT_PORT
     
     ; Check if last byte
     PLA
