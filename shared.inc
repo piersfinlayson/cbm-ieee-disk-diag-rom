@@ -56,9 +56,9 @@ CMD_RESULT_CMD = SHARED_RAM_START + $F5
 ; to IEEE handling - as we would have errored out earlier otherwise.
 IEEE_CMD_BUF = $1200
 
-; Used for diagnostics string to send.
+; Used for string to send.
 ; Again, we chose $1300 as in the first bank of RAM.
-IEEE_DIAG_BUF = $1300
+STRING_BUF = $1300
 .endif
 
 

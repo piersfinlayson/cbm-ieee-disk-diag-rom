@@ -94,7 +94,16 @@ WSB = $10 + ZP_OFFSET   ; wait_6504_status byte
 ; Used by check_takover
 CTA = $11 + ZP_OFFSET   ; check_takover - temporary A
 
-; Reserved for future temporary use: $11-$1F
+; String routines
+STI = $12 + ZP_OFFSET   ; string handling - temporary value
+BUF_INDEX = $13 + ZP_OFFSET   ; string handling - temporary value
+STR_INDEX = $14 + ZP_OFFSET   ; string handling - temporary value
+STR_LEN = $15 + ZP_OFFSET   ; string handling - temporary value
+
+BUF_PTR = TEMP_PTR1
+STR_PTR = TEMP_PTR2
+
+; Reserved for future temporary use: $16-$1F
 
 ; Used to track which tests have been performed by the 6502 code.  See the
 ; TEST_* values in constant_6502.inc for the tests that are performed for the

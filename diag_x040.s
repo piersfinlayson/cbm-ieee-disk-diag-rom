@@ -8,6 +8,7 @@
 
 CPU_6502 = 1
 .include "shared.inc"
+.include "macros.inc"
 
 ; Version numbers
 MAJOR_VERSION = $00
@@ -40,9 +41,32 @@ RESERVED = $00
                         ; us.
 
 .segment "DATA"
-piers_rocks: .byte 'p', 'i', 'e', 'r', 's', '.', 'r', 'o', 'c', 'k', 's' | $80
-CopyrightString: .asciiz "(c) 2025 Piers Finlayson"
-RepoString: .asciiz "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
+CbmString StrRomName, "Commodore IEEE Disk Drive Diagnostics ROM by piers.rocks"
+CbmString StrVersion, "ROM Version: "
+CbmString StrCopyright, "(c) 2025 Piers Finlayson"
+CbmString StrRepo, "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
+
+; Table of intro strings: low byte, high byte, action code
+; Action code:
+;   Bit 0: CR flag (0=add newline, 1=don't add NL)
+;   Bits 1-7: Action type (0=none, 1=add version, 2=underline)
+;
+; Strings will be added to create the intro message in the order shown
+intro_str_table:
+    .word StrRomName
+    .byte %00000101         ; Add NL, underline
+
+    .word StrVersion
+    .byte %00000011         ; Don't add NL, action 1: add version number
+ 
+    .word StrCopyright
+    .byte %00000000         ; Add NL, no special action
+    
+    .word StrRepo
+    .byte %00000000         ; Add NL, no special action
+    
+INTO_STR_TABLE_END:
+INTRO_STR_TABLE_LEN = (INTO_STR_TABLE_END - intro_str_table)
 
 ; Pages to test in our first RAM test
 RamTest0:
@@ -197,7 +221,6 @@ with_stack_main:
     JSR between_tests
 
     ; Initialize the IEEE stack
-    JSR create_diag_msg
     JSR ieee_init    
 
     JMP finished
@@ -1186,19 +1209,251 @@ clear_6504_result:
 
     RTS
 
-; Set diagnostics message
+; Add a string to the provided buffer
 ;
-; We need to create the diagnostics message we will send if we are connected
-; to via IEEE-488
-create_diag_msg:
-    LDX #$00                ; Create index
+; X = zero if need to add newline, non-zero if we don't
+; Y = index to buffer - will be updated and returned
+; BUF_PTR = buffer address
+; STR_PTR = string address
+;
+; Z will be set if the buffer is full, otherwise it won't be
+add_string:
+    TXA                     ; Store X on the stack for now
+    PHA
+    STY BUF_INDEX           ; Store Y in zero page
+    LDX #$00                ; Initialize string index
+    STX STR_INDEX
+    STX STR_LEN             ; Initialize string length to 0
 @next_byte:
-    LDA piers_rocks,X       ; Get next byte
-    STA IEEE_DIAG_BUF,X     ; Store it in the buffer   
-    BMI @done               ; If negative, we're done
-    INX
-    BPL @next_byte          ; Continue
+    LDY STR_INDEX           ; Get the string index
+    LDA (STR_PTR),Y         ; Get next byte
+    PHA                     ; Store it with high bit
+    AND #$7F                ; Mask off high bit
+    LDY BUF_INDEX           ; Get the buffer index
+    STA (BUF_PTR),Y         ; Store char in the buffer
+    INC STR_LEN             ; Track string length
+    PLA                     ; Retrieve with high bit
+    BMI @finished_str       ; If negative, we're done
+    INC STR_INDEX           ; Increment string index - don't need to test as
+                            ; will be <= Y
+    INC BUF_INDEX           ; Increment buffer index
+    BNE @next_byte          ; Continue if Y still non-zero
+    BEQ @done
+@finished_str:
+    INC BUF_INDEX           ; Skipped this due to branch above
+    PLA                     ; Retrieve what used to be X (now A)
+    TAX                     ; Put it back as X in case caller wants it
+    BNE @done               ; If not zero, we're done
+    LDY BUF_INDEX           ; Get the buffer index
+    JSR add_newline         ; Y is updated, so no need to load before RTS
+    RTS
+
 @done:
+    LDY BUF_INDEX           ; Get the buffer index
+    RTS
+
+; Add a newline to the provided buffer
+;
+; Y = index to buffer - will be updated and returned
+; BUF_PTR = buffer address
+;
+; Z will be set if the buffer is full, otherwise it won't be
+add_newline:
+    LDA #$0A                ; \n
+    STA (BUF_PTR),Y         ; Store it in the buffer   
+    INY                     ; Increment Y
+    RTS
+
+; Create initial message to be sent when put into TALK mode via IEEE-488
+create_intro_msg:
+    ; Store registers on stack
+    PHA
+    TXA
+    PHA
+    TYA
+    PHA
+
+    LDY #$00                ; Initialize buffer index
+    LDA #<STRING_BUF
+    STA BUF_PTR
+    LDA #>STRING_BUF
+    STA BUF_PTR+1
+
+    LDX #0                  ; String table index
+@string_loop:
+    STX STI                 ; Save current string table index in zero page
+
+    ; Load string address (as a word)
+    LDA intro_str_table,X   ; Get low byte
+    STA STR_PTR
+    LDA intro_str_table+1,X ; Get high byte
+    STA STR_PTR+1
+    
+    LDA intro_str_table+2,X ; Get flags/action code
+    PHA                     ; Save action code for later
+
+    AND #$01                ; Isolate CR flag (bit 0)
+    TAX                     ; X=0 add CR, X!=0 don't add CR
+    JSR add_string
+    BEQ @done               ; Buffer full
+    
+    PLA                     ; Restore action code
+    LSR A                   ; Shift right to get action type (bits 1-7)
+    BEQ @next_string        ; If 0, no special action
+    
+    CMP #1
+    BEQ @do_version         ; Action 1: add version number
+
+    CMP #2
+    BEQ @do_underline       ; Action 2: underline previous line
+
+    ; No other actions supported at this point
+@next_string:
+    LDX STI                 ; Restore string table index
+    INX                     ; Increment 3 times for next string
+    INX
+    INX
+    CPX #INTRO_STR_TABLE_LEN
+    BCC @string_loop        ; Continue if not at end
+    ; Otherwise fall through to done
+
+@done:
+    DEY              
+    LDA (BUF_PTR),Y         ; Get the last byte
+    ORA #$80                ; Set the high bit
+    STA (BUF_PTR),Y         ; Store it in the buffer
+
+    ; Restore registers
+    PLA
+    TAY
+    PLA
+    TAX
+    PLA
+
+    RTS
+
+@do_version:
+    JSR add_version_number
+    BEQ @done
+    BNE @next_string
+
+@do_underline:
+    JSR add_underline       ; Add underline characters
+    BEQ @done
+    BNE @next_string
+
+; Add underline characters based on the length of the last string
+add_underline:
+    JSR add_newline         ; Add a CR first
+    BEQ @done               ; Buffer full
+    
+    LDX STR_LEN             ; Get the length of the previous string
+    BEQ @success            ; If zero, nothing to underline
+    
+@underline_loop:
+    LDA #$2D                ; "-" character
+    STA (BUF_PTR),Y         ; Store in buffer
+    INY
+    BNE @continue           ; If Y didn't wrap, continue
+    RTS                     ; Buffer full, return with Z=1 (failure)
+
+@continue:
+    DEX                     ; Decrement counter
+    BNE @underline_loop     ; Continue until we've added enough "-"
+
+@success:
+    JSR add_newline         ; Add a CR after the underline
+@done:
+    RTS
+
+; Assert version numbers are in valid range
+.assert MAJOR_VERSION <= 99, error, "MAJOR_VERSION > 99"
+.assert MINOR_VERSION <= 99, error, "MINOR_VERSION > 99"
+.assert PATCH_VERSION <= 99, error, "PATCH_VERSION > 99"
+
+; Add version number
+add_version_number:
+    ; Handle MAJOR_VERSION
+    LDA #MAJOR_VERSION      ; Load the immediate value
+    JSR output_decimal_byte
+    BCS @done               ; Exit if buffer full
+    
+    ; Add period
+    LDA #'.'
+    STA (BUF_PTR),Y
+    INY
+    BEQ @done
+    
+    ; Handle MINOR_VERSION  
+    LDA #MINOR_VERSION      ; Load the immediate value
+    JSR output_decimal_byte
+    BCS @done               ; Exit if buffer full
+    
+    ; Add period
+    LDA #'.'
+    STA (BUF_PTR),Y
+    INY
+    BEQ @done
+    
+    ; Handle PATCH_VERSION
+    LDA #PATCH_VERSION      ; Load the immediate value
+    JSR output_decimal_byte
+    BCS @done               ; Exit if buffer full
+    
+    ; Add CR after version number
+    JSR add_newline
+@done:
+    RTS
+
+; Convert byte in A (0-99) to decimal ASCII and store at (BUF_PTR),Y
+; Advances Y for each digit output
+; Returns with carry set if buffer full (Y wrapped to 0)
+output_decimal_byte:
+    ; Check if value >= 10
+    CMP #10
+    BCC @single_digit  ; If < 10, skip tens digit
+    
+    ; Divide by 10 using repeated subtraction
+    LDX #0          ; X will hold the tens digit
+@div_loop:
+    SEC
+    SBC #10
+    INX
+    CMP #10
+    BCS @div_loop   ; If >= 10, continue loop
+    
+    ; X now has tens digit, A has ones digit
+    PHA             ; Save ones digit
+    
+    ; Output tens digit
+    TXA
+    CLC
+    ADC #$30        ; Convert to ASCII
+    STA (BUF_PTR),Y
+    INY
+    BEQ @buffer_full_with_stack
+    
+    ; Output ones digit
+    PLA
+    JMP @output_digit
+    
+@buffer_full_with_stack:
+    PLA             ; Clean up stack before returning
+    SEC             ; Set carry to indicate buffer is full
+    RTS
+
+@single_digit:
+@output_digit:
+    CLC
+    ADC #$30        ; Convert to ASCII
+    STA (BUF_PTR),Y
+    INY
+    BEQ @buffer_full
+    CLC             ; Clear carry to indicate success
+    RTS
+    
+@buffer_full:
+    SEC             ; Set carry to indicate buffer is full
     RTS
 
 ; Initialise the IEEE-488 ports and computes device ID
@@ -1342,6 +1597,10 @@ ieee_irq_handler:
     ; Call talk handler
     JSR talk_handler
 
+    LDA #DR01_LEDS
+    STA RIOT_UE1_PBD        ; Set drive 0/1 LEDs on
+
+
     ; Reset control lines to idle state after talk_handler
     LDA #$07                ; ~DACO, RFDO, ATNA all high
     ORA IEEE_CONTROL
@@ -1356,7 +1615,15 @@ ieee_irq_handler:
     PLA
     TAX
     PLA
+
+    BIT IEEE_CONTROL        ; Finally check whether ~ATN has been pulled high
+                            ; (again).  If so, we need to go around this
+                            ; interrupt handler aghain.
+    BMI @again
     RTI
+
+@again:
+    JMP ieee_irq_handler
 
 @handle_listen:
     LDA IEEE_DATA_BYTE
@@ -1378,11 +1645,6 @@ ieee_irq_handler:
 
 @handle_talk:
     STY IEEE_TALK_ACTIVE    ; Clear talk active (Y is set to zero before this)
-
-    ; Set just the LED for drive 0 to show we got here
-    LDA #DR0_LED
-    STA RIOT_UE1_PBD
-
 
     LDA IEEE_DATA_BYTE      ; Get our data byte
     CMP TALK_ADDR           ; Compare with our TALK address
@@ -1467,17 +1729,35 @@ talk_handler:
     RTS
 
 @cmd_talk:
-    ; Send diagnostic status
+    ; Create introduction message - placed in STRING_BUF
+    JSR create_intro_msg
+
+    LDA #DR0_LED
+    STA RIOT_UE1_PBD        ; Set drive 0 LED on
+
+    ; Send it
     LDX #$00
 @cmd_send_loop:
-    LDA IEEE_DIAG_BUF,X     ; Load from diags message
+    LDA #DR1_LED
+    STA RIOT_UE1_PBD        ; Set drive 0 LED on
+    
+    LDA STRING_BUF,X        ; Load from diags message
     BMI @last_byte          ; Last byte has MSB set
     JSR send_byte           ; Send the byte
+    BIT IEEE_CONTROL        ; Check ATN
+    BMI @done               ; unwind
+
+    LDA RIOT_UE1_PBD
+    EOR #DR01_LEDS          ; Toggle the LED state
+    STA RIOT_UE1_PBD        ; Set the new LED state
+
     INX
     BNE @cmd_send_loop
 
 @last_byte:
     JSR send_byte
+
+@done:
     RTS
 
 ; Receive a byte from the IEEE bus
@@ -1515,7 +1795,9 @@ receive_byte:
 send_byte:
     ; Wait for NRFD high
 @wait_nrfd_high:
-    BIT RIOT_UE1_PBD
+    BIT IEEE_CONTROL        ; Check for ~ATN going high (asserted)
+    BMI @done
+    BIT RIOT_UE1_PBD        ; Check NRFD
     BPL @wait_nrfd_high
     
     ; Put data on the bus
@@ -1544,14 +1826,16 @@ send_byte:
 
 @wait_ack:
     ; Wait for NDAC high (DACI - note this is Port B)
-    BIT RIOT_UE1_PBD
+    BIT IEEE_CONTROL        ; Check for ~ATN going high (asserted)
+    BMI @done
+    BIT RIOT_UE1_PBD        ; Check DACI
     BVC @wait_ack
-    
+
+@done:
     ; Release data lines
     LDA #$18                ; Set EOIO (bit 3) and DAVO (bit 4) high
     ORA IEEE_CONTROL
     STA IEEE_CONTROL
-    
     RTS
 
 ; Our no-op NMI handler
