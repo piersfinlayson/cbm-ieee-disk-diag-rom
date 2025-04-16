@@ -79,10 +79,13 @@ INTRO_STR_TABLE_LEN = (INTO_STR_TABLE_END - intro_str_table)
 ; Strings are created and stored in STRING_BUF, which is stored in RAM.
 
 ; Channel names
-CbmString StrChannelListing, "Channel listing"
-CbmString StrRomInfo, "ROM Info"
-CbmString StrResultsSummary, "Test Result Summary"
-CbmString StrStatus, "Status"
+CbmString StrChannelListing, "Channel list"
+CbmString StrRomInfo, "ROM info"
+CbmString StrResultsSummary, "Test result summary"
+CbmString StrStatus, "Drive status"
+
+; Channel string
+CbmString StrChannel, "Channel "
 
 ; Talk string table entry length
 TALK_STR_TABLE_ENTRY_LEN = 5
@@ -1429,14 +1432,59 @@ build_test_results_summary_str:
     JSR add_string
     RTS
 
+; Build a string listing all available channels and their purposes.
+; Format: "Channel X: Description" for each channel
 build_channel_listing_str:
-    JSR setup_string_buf
-
-    LDA #<StrNotImplemented
+    JSR setup_string_buf    ; Initialize the buffer
+    
+    LDX #$00                ; Initialize index into talk_str_table
+@channel_loop:
+    ; Add "Channel " text
+    LDA #<StrChannel
     STA STR_PTR
-    LDA #>StrNotImplemented
+    LDA #>StrChannel
     STA STR_PTR+1
+    
+    STX STI                 ; Store X in STI zero page location
+    LDX #$01                ; Don't add newline (X != 0)
     JSR add_string
+    BEQ @done               ; Buffer full check
+    LDX STI                 ; Restore X
+    
+    ; Add channel number
+    LDA talk_str_table,X    ; Get channel number from table
+    JSR output_decimal_byte
+    BCS @done               ; Exit if buffer full (carry set)
+    
+    ; Add ": " text
+    LDA #$3A                ; Colon character
+    JSR add_char
+    BEQ @done
+    LDA #$20                ; Space character
+    JSR add_char
+    BEQ @done
+    
+    ; Add channel description
+    LDA talk_str_table+1,X  ; Get low byte of string pointer
+    STA STR_PTR
+    LDA talk_str_table+2,X  ; Get high byte of string pointer
+    STA STR_PTR+1
+    
+    STX STI                 ; Store X in STI zero page location
+    LDX #$00                ; Add newline after this string
+    JSR add_string
+    BEQ @done               ; Buffer full check
+    LDX STI                 ; Restore X
+    
+    ; Move to next entry
+    TXA
+    CLC
+    ADC #TALK_STR_TABLE_ENTRY_LEN   ; Move to next entry
+    TAX
+    CPX #TALK_STR_TABLE_LEN         ; Check if we've reached the end
+    BCC @channel_loop       ; If not, continue loop
+    
+@done:
     RTS
 
 ; Create initial message to be sent when put into TALK mode via IEEE-488
