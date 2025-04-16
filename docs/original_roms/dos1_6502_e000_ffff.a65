@@ -1,14 +1,17 @@
-
-; *** text follows ***
-
- *=$E000
-
-; Further commented by Piers Finlayson <piers@piers.rocks> April 2025
-; Particularly covers the power on self test and initialization
+; This source code is a disaseembly of a Commodore 2040/3040/4040 disk drive
+; 6502 DOS 1 ROM, located at UL1 ($F000-$FFF) and UH1 ($E000-EFFF).
+; 
+; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
 ; Original version of this file was sourced from:
 ; http://www.6502.org/users/andre/petindex/drives/roms/
+;
+; New comments are Copyright (c) 2025 Piers Finlayson.
 
+ *=$E000
+
+; Original comment from Anfre Fachat:
+;
 ; This is a commented disassembly of the DOS V1 as used
 ; in the Commodore 2040 dual disk drive. The disassembly
 ; is taken from the images of the ROM chips named 
@@ -326,279 +329,493 @@
  E216  8D 82 02             STA RIOT2PBD    ; Set UE1 port B to 0x00 - turn off all LEDs
  E219  AD 82 02             LDA RIOT2PBD    ; Load A with UE1 port B values, so we can test the device ID
  
- ; compute primary IEEE address
- E21C  29 07                AND #$07      
- E21E  09 48                ORA #$48      
- E220  85 33                STA TLKADR    
- E222  49 60                EOR #$60      
- E224  85 32                STA LSNADR    
- E226  A9 81                LDA #$81       ; init command channel
- E228  85 C4                STA CHNRDY+6  
- E22A  A9 30                LDA #$30      
- E22C  8D DF 10             STA CHNDAT+6  
- E22F  20 D6 ED             JSR INTTAB    
- E232  A9 FF                LDA #$FF      
- E234  A2 21                LDX #$21      
- E236  9D B7 10  iE236      STA LINTAB,X  
- E239  CA                   DEX           
- E23A  10 FA                BPL iE236     
- E23C  A9 07                LDA #$07       ; CMDRD
- E23E  8D D5 10             STA LINTAB+30 
- E241  A9 06                LDA #$06       ; CMDWRT
- E243  8D D6 10             STA LINTAB+31 
- E246  A9 3F                LDA #$3F      
- E248  85 3C                STA LINUSE    
- E24A  A9 0F                LDA #$0F      
- E24C  85 6B                STA BUFNUM+12 
- E24E  A9 10                LDA #$10      
- E250  85 6D                STA BUFNUM+14 
- E252  A9 FF                LDA #$FF      
- E254  85 6C                STA BUFNUM+13 
- E256  85 6E                STA BUFNUM+15 
- E258  A9 88                LDA #$88      
- E25A  85 C5                STA CHNRDY+7  
- E25C  A9 01                LDA #$01      
- E25E  85 C4                STA CHNRDY+6  
- E260  A9 00                LDA #$00      
- E262  85 8B                STA BUFUSE    
- E264  A9 E0                LDA #$E0      
- E266  85 8C                STA BUFUSE+1  
- E268  20 49 FD             JSR USRINT     ; init user jump
- E26B  A9 0A                LDA #$0A       ; setup sector offset
- E26D  85 92                STA SECINC    
- E26F  8D 87 02             STA RIOT2ATNPE ; allow ATN to interrupt
- E272  A5 3A     IDLE       LDA CMDWAT    
- E274  F0 08                BEQ IDLE2     
- E276  A9 00                LDA #$00      
- E278  85 3A                STA CMDWAT    
- E27A  78                   SEI           
- E27B  20 44 F0             JSR PARSXQ     ; parse and execute command
- E27E  58        IDLE2      CLI            ; test for drive running or openfile
- E27F  A9 1D                LDA #$1D      
- E281  85 2D                STA TEMP+3    
- E283  A9 00                LDA #$00      
- E285  85 2A                STA TEMP      
- E287  85 2B                STA TEMP+1    
- E289  A6 2D     iE289      LDX TEMP+3     ; look thru LINTAB
- E28B  BD B7 10             LDA LINTAB,X  
- E28E  C9 FF                CMP #$FF       ; for active file
- E290  F0 0E                BEQ iE2A0     
- E292  85 83                STA LINDX     
- E294  20 9D E8             JSR GETACT    
- E297  AA                   TAX           
- E298  BD 99 10             LDA LSTJOB,X   ; determine which drv is on
- E29B  29 01                AND #$01      
- E29D  AA                   TAX           
- E29E  F6 2A                INC TEMP,X    
- E2A0  C6 2D     iE2A0      DEC TEMP+3     ; set flag indicating drive
- E2A2  10 E5                BPL iE289      ; has file open
- E2A4  A0 0E                LDY #$0E       ; look through job queue
- E2A6  B9 03 10  iE2A6      LDA JOBS,Y     ; for jobs still running
- E2A9  10 05                BPL iE2B0     
- E2AB  29 01                AND #$01      
- E2AD  AA                   TAX           
- E2AE  F6 2A                INC TEMP,X     ; set flag indicating drive
- E2B0  88        iE2B0      DEY            ; is active
- E2B1  10 F3                BPL iE2A6     
- E2B3  AD 82 02             LDA RIOT2PBD  
- E2B6  29 E7                AND #$E7       ; 255-ACTLDA-ACTLDB
- E2B8  8D 82 02             STA RIOT2PBD  
- E2BB  A5 2A                LDA TEMP      
- E2BD  F0 08                BEQ iE2C7     
- E2BF  AD 82 02             LDA RIOT2PBD   ; turn on LED if drive flag
- E2C2  09 10                ORA #$10       ; ACTLDB if not 0
- E2C4  8D 82 02             STA RIOT2PBD  
- E2C7  A5 2B     iE2C7      LDA TEMP+1    
- E2C9  F0 08                BEQ iE2D3     
- E2CB  AD 82 02             LDA RIOT2PBD  
- E2CE  09 08                ORA #$08       ; ACTLDA
- E2D0  8D 82 02             STA RIOT2PBD  
- E2D3  4C 7E E2  iE2D3      JMP IDLE2     
+;==============================================================================
+; IEEE ADDRESS CONFIGURATION AND INITIALIZATION
+;==============================================================================
+ E21C  29 07                AND #$07       ; Mask to keep only lower 3 bits (device number 0-7)
+ E21E  09 48                ORA #$48       ; Set to $48-$4F (IEEE-488 talk address range)
+ E220  85 33                STA TLKADR     ; Store as talk address
+ E222  49 60                EOR #$60       ; Toggle bits to create listen address ($08-$0F)
+ E224  85 32                STA LSNADR     ; Store as listen address
 
- E2D6  A2 FF     ATNIRQ     LDX #$FF       ; IRQ routine (triggered by ATN), listen to PET
- E2D8  9A                   TXS            ; clear stack
- E2D9  AD 87 02             LDA RIOT2ATNPE ; clear IRQ flag
- E2DC  A9 18                LDA #$18       ; DAVO+EOIO
- E2DE  0D 80 02             ORA RIOT2PAD   ; free control lines
- E2E1  8D 80 02             STA RIOT2PAD  
- E2E4  A9 FF                LDA #$FF      
- E2E6  8D 02 02             STA RIOT1IEEEDO ; clear data lines
- E2E9  A9 07     iE2E9      LDA #$07       ; DACO+RFDO+ATNA
- E2EB  0D 80 02             ORA RIOT2PAD  
- E2EE  8D 80 02             STA RIOT2PAD  
- E2F1  2C 80 02  iE2F1      BIT RIOT2PAD  
- E2F4  50 04                BVC iE2FA      ; DAV LO
- E2F6  30 F9                BMI iE2F1      ; ATN LO ATNI HI
- E2F8  10 7B                BPL iE375      ; ATN HI
- E2FA  A9 FB     iE2FA      LDA #$FB       ; 255-RFDO; NRFD LO
- E2FC  2D 80 02             AND RIOT2PAD  
- E2FF  8D 80 02             STA RIOT2PAD  
- E302  29 20                AND #$20       ; save EOI
- E304  85 88                STA EOIFLG    
- E306  AD 00 02             LDA RIOT1IEEEDI
- E309  49 FF                EOR #$FF      
- E30B  85 87                STA DATA       ; save command
- E30D  A9 FD                LDA #$FD       ; 255-DACO; NDAC HI
- E30F  2D 80 02             AND RIOT2PAD  
- E312  8D 80 02             STA RIOT2PAD  
- E315  A0 00                LDY #$00      
- E317  A5 87                LDA DATA      
- E319  29 60                AND #$60      
- E31B  C9 40                CMP #$40       ; TALK?
- E31D  F0 29                BEQ iE348     
- E31F  C9 20                CMP #$20       ; LISTEN?
- E321  F0 06                BEQ iE329     
- E323  C9 60                CMP #$60       ; SECONDARY?
- E325  F0 2F                BEQ iE356     
- E327  D0 44                BNE iE36D      ; OTHER
- E329  A5 87     iE329      LDA DATA      
- E32B  C5 32                CMP LSNADR    
- E32D  F0 0B                BEQ iE33A      ; my listen address
- E32F  C9 3F                CMP #$3F       ; UNLISTEN
- E331  D0 02                BNE iE335     
- E333  84 34                STY LSNACT    
- E335  84 36     iE335      STY ADRSED     ; not primary ADDRSED
- E337  4C 6D E3             JMP iE36D     
- E33A  85 34     iE33A      STA LSNACT    
- E33C  84 35                STY TLKACT    
- E33E  A9 20     iE33E      LDA #$20      
- E340  85 84                STA SA         ; default SA
- E342  85 85                STA ORGSA     
- E344  85 36                STA ADRSED     ; PRIMARY ADDRESSED
- E346  D0 25                BNE iE36D     
- E348  84 35     iE348      STY TLKACT    
- E34A  A5 87                LDA DATA      
- E34C  C5 33                CMP TLKADR    
- E34E  D0 E5                BNE iE335     
- E350  85 35                STA TLKACT    
- E352  84 34                STY LSNACT    
- E354  F0 E8                BEQ iE33E     
- E356  A5 36     iE356      LDA ADRSED    
- E358  F0 13                BEQ iE36D     
- E35A  A5 87                LDA DATA      
- E35C  85 85                STA ORGSA      ; NOT ADDRESSED
- E35E  48                   PHA           
- E35F  29 0F                AND #$0F      
- E361  85 84                STA SA        
- E363  68                   PLA           
- E364  29 F0                AND #$F0       ; CLOSE?
- E366  C9 E0                CMP #$E0      
- E368  D0 03                BNE iE36D     
- E36A  20 0F EC             JSR CLOSE     
- E36D  2C 80 02  iE36D      BIT RIOT2PAD  
- E370  50 FB                BVC iE36D     
- E372  4C E9 E2             JMP iE2E9     
- E375  A5 34     iE375      LDA LSNACT    
- E377  F0 0F                BEQ iE388     
- E379  A9 FA                LDA #$FA       ; 255-RFDO-ATNA
- E37B  2D 80 02             AND RIOT2PAD  
- E37E  8D 80 02             STA RIOT2PAD  
- E381  58                   CLI           
- E382  20 9B E3             JSR LISTEN    
- E385  4C 72 E2             JMP IDLE      
- E388  A9 FC     iE388      LDA #$FC       ; 255-RFDO-ATNA
- E38A  2D 80 02             AND RIOT2PAD  
- E38D  8D 80 02             STA RIOT2PAD  
- E390  58                   CLI           
- E391  A5 35                LDA TLKACT    
- E393  F0 03                BEQ iE398     
- E395  20 2B E4             JSR TALK      
- E398  4C 72 E2  iE398      JMP IDLE      
+;==============================================================================
+; COMMAND CHANNEL INITIALIZATION
+;==============================================================================
+ E226  A9 81                LDA #$81       ; Init command channel - bit 7 set (channel open), bit 0 set (write access)
+ E228  85 C4                STA CHNRDY+6   ; Mark command channel (channel 6) as ready
+ E22A  A9 30                LDA #$30       ; ASCII '0' - initialize command channel with '0'
+ E22C  8D DF 10             STA CHNDAT+6   ; Store in command channel data buffer
 
- E39B  A9 04     LISTEN     LDA #$04       ; RFD HI
- E39D  0D 80 02             ORA RIOT2PAD  
- E3A0  8D 80 02             STA RIOT2PAD  
- E3A3  2C 80 02  iE3A3      BIT RIOT2PAD   ; DAV LO
- E3A6  70 FB                BVS iE3A3     
- E3A8  20 AD E9             JSR FNDWCH     ; WAS LDX SA
- E3AB  B0 05                BCS iE3B2     
- E3AD  B5 BE                LDA CHNRDY,X  
- E3AF  6A                   ROR            ; ok, open for LISTEN
- E3B0  B0 49                BCS iE3FB     
- E3B2  A5 85     iE3B2      LDA ORGSA      ; WAS TXA
- E3B4  29 F0                AND #$F0       ; SA=OPEN?
- E3B6  C9 F0                CMP #$F0      
- E3B8  F0 41                BEQ iE3FB     
- E3BA  A5 84                LDA SA        
- E3BC  C9 01                CMP #$01       ; save?
- E3BE  F0 0E                BEQ iE3CE     
- E3C0  2C 80 02  iE3C0      BIT RIOT2PAD  
- E3C3  50 FB                BVC iE3C0     
- E3C5  A9 FD                LDA #$FD       ; 255-DACO
- E3C7  2D 80 02             AND RIOT2PAD  
- E3CA  8D 80 02             STA RIOT2PAD  
- E3CD  60                   RTS           
- E3CE  A9 FB     iE3CE      LDA #$FB       ; 255-RFDO, ACCEPT ALL DATA
- E3D0  2D 80 02             AND RIOT2PAD  
- E3D3  8D 80 02             STA RIOT2PAD   ; RFD LOW
- E3D6  A9 FD                LDA #$FD       ; 255-DACO
- E3D8  2D 80 02             AND RIOT2PAD  
- E3DB  8D 80 02             STA RIOT2PAD   ; DAC HI
- E3DE  2C 80 02  iE3DE      BIT RIOT2PAD   ; DAV HI
- E3E1  50 FB                BVC iE3DE     
- E3E3  A9 02                LDA #$02       ; DACO
- E3E5  0D 80 02             ORA RIOT2PAD  
- E3E8  8D 80 02             STA RIOT2PAD   ; DAC LOW
- E3EB  A9 04                LDA #$04       ; RFDO, RFD HI
- E3ED  0D 80 02             ORA RIOT2PAD  
- E3F0  8D 80 02             STA RIOT2PAD  
- E3F3  2C 80 02  iE3F3      BIT RIOT2PAD   ; WAIT DAV LOW
- E3F6  50 FB                BVC iE3F3     
- E3F8  4C CE E3             JMP iE3CE      ; Do UNTIL ATn PULLED
- E3FB  A9 FB     iE3FB      LDA #$FB       ; 255-RFDO
- E3FD  2D 80 02             AND RIOT2PAD  
- E400  8D 80 02             STA RIOT2PAD  
- E403  29 20                AND #$20      
- E405  85 88                STA EOIFLG    
- E407  AD 00 02             LDA RIOT1IEEEDI
- E40A  49 FF                EOR #$FF      
- E40C  85 87                STA DATA      
- E40E  78                   SEI           
- E40F  A9 FD                LDA #$FD       ; 255-DACO
- E411  2D 80 02             AND RIOT2PAD  
- E414  8D 80 02             STA RIOT2PAD  
- E417  2C 80 02  iE417      BIT RIOT2PAD  
- E41A  50 FB                BVC iE417     
- E41C  A9 02                LDA #$02       ; DACO
- E41E  0D 80 02             ORA RIOT2PAD  
- E421  8D 80 02             STA RIOT2PAD  
- E424  20 FE E7             JSR PUT       
- E427  58                   CLI           
- E428  4C 9B E3             JMP LISTEN    
+;==============================================================================
+; TABLES INITIALIZATION
+;==============================================================================
+ E22F  20 D6 ED             JSR INTTAB     ; Initialize system tables
+ E232  A9 FF                LDA #$FF       ; Load $FF (indicates unused entry)
+ E234  A2 21                LDX #$21       ; Initialize X to 33 (table size - 1)
+ E236  9D B7 10  iE236      STA LINTAB,X   ; Fill logical index table with $FF
+ E239  CA                   DEX            ; Decrement counter
+ E23A  10 FA                BPL iE236      ; Branch if still positive (loop until all entries filled)
 
- E42B  20 B0 E9  TALK       JSR FNDRCH    
- E42E  B0 06                BCS NOTLK      ; TEST IF CHANNEL READY
- E430  A6 83     iE430      LDX LINDX     
- E432  B5 BE                LDA CHNRDY,X  
- E434  30 01                BMI iE437     
- E436  60        NOTLK      RTS           
- E437  2C 82 02  iE437      BIT RIOT2PBD   ; RFD HI
- E43A  10 FB                BPL iE437     
- E43C  BD D9 10             LDA CHNDAT,X  
- E43F  49 FF                EOR #$FF      
- E441  8D 02 02             STA RIOT1IEEEDO
- E444  B5 BE                LDA CHNRDY,X  
- E446  09 E7                ORA #$E7       ; 255-EOIO-DAVO, DAV LO
- E448  2D 80 02             AND RIOT2PAD  
- E44B  8D 80 02             STA RIOT2PAD  
- E44E  2C 82 02  iE44E      BIT RIOT2PBD  
- E451  10 0D                BPL iE460     
- E453  50 F9                BVC iE44E     
- E455  A9 18                LDA #$18       ; DAVO+EOIO
- E457  0D 80 02             ORA RIOT2PAD  
- E45A  8D 80 02             STA RIOT2PAD  
- E45D  4C 72 E2             JMP IDLE      
- E460  20 D6 EC  iE460      JSR GET       
- E463  2C 82 02  iE463      BIT RIOT2PBD  
- E466  50 FB                BVC iE463     
- E468  A9 FF                LDA #$FF      
- E46A  8D 02 02             STA RIOT1IEEEDO
- E46D  A9 18                LDA #$18       ; DAVO+EOIO
- E46F  0D 80 02             ORA RIOT2PAD  
- E472  8D 80 02             STA RIOT2PAD  
- E475  2C 82 02  iE475      BIT RIOT2PBD  
- E478  70 FB                BVS iE475     
- E47A  50 B4                BVC iE430      ; END OF IEEE
+;==============================================================================
+; COMMAND CHANNEL TABLE SETUP
+;==============================================================================
+ E23C  A9 07                LDA #$07       ; CMDRD value (command read)
+ E23E  8D D5 10             STA LINTAB+30  ; Store at special LINTAB position for command reading
+ E241  A9 06                LDA #$06       ; CMDWRT value (command write) 
+ E243  8D D6 10             STA LINTAB+31  ; Store at special LINTAB position for command writing
+
+;==============================================================================
+; SYSTEM VARIABLES INITIALIZATION
+;==============================================================================
+ E246  A9 3F                LDA #$3F       ; Initialize LINUSE (bitmap of logical channels in use)
+ E248  85 3C                STA LINUSE     ; Store bitmask for channels in use (bits 0-5 set)
+ E24A  A9 0F                LDA #$0F       ; Value for buffer 12
+ E24C  85 6B                STA BUFNUM+12  ; Store in buffer number table
+ E24E  A9 10                LDA #$10       ; Value for buffer 14
+ E250  85 6D                STA BUFNUM+14  ; Store in buffer number table
+ E252  A9 FF                LDA #$FF       ; $FF indicates unused entry
+ E254  85 6C                STA BUFNUM+13  ; Mark buffer 13 as unused
+ E256  85 6E                STA BUFNUM+15  ; Mark buffer 15 as unused
+
+;==============================================================================
+; MORE CHANNEL INITIALIZATION
+;==============================================================================
+ E258  A9 88                LDA #$88       ; Initialize channel 7 - bit 7 set (channel open)
+ E25A  85 C5                STA CHNRDY+7   ; Mark channel 7 as ready with specific status
+ E25C  A9 01                LDA #$01       ; Update channel 6 - write-only status
+ E25E  85 C4                STA CHNRDY+6   ; Set command channel (channel 6) as write-only
+
+;==============================================================================
+; BUFFER INITIALIZATION
+;==============================================================================
+ E260  A9 00                LDA #$00       ; Low byte of buffer address
+ E262  85 8B                STA BUFUSE     ; Store low byte of buffer usage pointer
+ E264  A9 E0                LDA #$E0       ; High byte of buffer address
+ E266  85 8C                STA BUFUSE+1   ; Store high byte of buffer usage pointer
+
+;==============================================================================
+; FINAL SYSTEM INITIALIZATION
+;==============================================================================
+ E268  20 49 FD             JSR USRINT     ; Initialize user jump table
+ E26B  A9 0A                LDA #$0A       ; Setup sector offset (10)
+ E26D  85 92                STA SECINC     ; Store sector increment value
+ E26F  8D 87 02             STA RIOT2ATNPE ; Configure RIOT chip - enable ATN interrupt
+
+;==============================================================================
+; MAIN IDLE LOOP - COMMAND PROCESSING
+;==============================================================================
+ E272  A5 3A     IDLE       LDA CMDWAT     ; Check if command waiting flag is set
+ E274  F0 08                BEQ IDLE2      ; If no command waiting, branch to IDLE2
+ E276  A9 00                LDA #$00       ; Clear command waiting flag
+ E278  85 3A                STA CMDWAT     ; Store 0 in command waiting flag
+ E27A  78                   SEI            ; Disable interrupts while executing command
+ E27B  20 44 F0             JSR PARSXQ     ; Parse and execute command
+ E27E  58        IDLE2      CLI            ; Re-enable interrupts
+
+;==============================================================================
+; DRIVE STATUS CHECKING - INITIALIZE
+;==============================================================================
+ E27F  A9 1D                LDA #$1D       ; Loop counter (29 decimal)
+ E281  85 2D                STA TEMP+3     ; Store in temporary variable
+ E283  A9 00                LDA #$00       ; Initialize drive activity flags
+ E285  85 2A                STA TEMP       ; Clear drive 0 activity flag
+ E287  85 2B                STA TEMP+1     ; Clear drive 1 activity flag
+
+;==============================================================================
+; FILE ACTIVITY CHECK LOOP
+;==============================================================================
+ E289  A6 2D     iE289      LDX TEMP+3     ; Load table index from counter
+ E28B  BD B7 10             LDA LINTAB,X   ; Look through LINTAB entries
+ E28E  C9 FF                CMP #$FF       ; Check if entry is unused ($FF)
+ E290  F0 0E                BEQ iE2A0      ; If unused, skip to next entry
+ E292  85 83                STA LINDX      ; Store logical index
+ E294  20 9D E8             JSR GETACT     ; Get activity status for this index
+ E297  AA                   TAX            ; Transfer activity to X register
+ E298  BD 99 10             LDA LSTJOB,X   ; Get job info from last job table
+ E29B  29 01                AND #$01       ; Mask to get drive number (0 or 1)
+ E29D  AA                   TAX            ; Transfer drive number to X
+ E29E  F6 2A                INC TEMP,X     ; Increment activity counter for this drive
+ E2A0  C6 2D     iE2A0      DEC TEMP+3     ; Decrement loop counter
+ E2A2  10 E5                BPL iE289      ; Loop if counter still positive
+
+;==============================================================================
+; JOB QUEUE CHECK
+;==============================================================================
+ E2A4  A0 0E                LDY #$0E       ; Start at job 14 (highest job number)
+ E2A6  B9 03 10  iE2A6      LDA JOBS,Y     ; Get job status
+ E2A9  10 05                BPL iE2B0      ; If bit 7 clear (job not active), skip
+ E2AB  29 01                AND #$01       ; Mask to get drive number (0 or 1)
+ E2AD  AA                   TAX            ; Transfer drive number to X
+ E2AE  F6 2A                INC TEMP,X     ; Increment activity flag for this drive
+ E2B0  88        iE2B0      DEY            ; Move to next job (lower number)
+ E2B1  10 F3                BPL iE2A6      ; Loop if more jobs to check
+
+;==============================================================================
+; DRIVE LED CONTROL
+;==============================================================================
+ E2B3  AD 82 02             LDA RIOT2PBD   ; Load current RIOT port B data
+ E2B6  29 E7                AND #$E7       ; Clear LED bits (bits 3 and 4)
+ E2B8  8D 82 02             STA RIOT2PBD   ; Update RIOT port (LEDs off)
+ E2BB  A5 2A                LDA TEMP       ; Check drive 0 activity flag
+ E2BD  F0 08                BEQ iE2C7      ; If no activity, skip LED on
+ E2BF  AD 82 02             LDA RIOT2PBD   ; Load current RIOT port B data
+ E2C2  09 10                ORA #$10       ; Set drive 1 LED bit (bit 4)
+ E2C4  8D 82 02             STA RIOT2PBD   ; Update RIOT port (LED on)
+ E2C7  A5 2B     iE2C7      LDA TEMP+1     ; Check drive 1 activity flag
+ E2C9  F0 08                BEQ iE2D3      ; If no activity, skip LED on
+ E2CB  AD 82 02             LDA RIOT2PBD   ; Load current RIOT port B data
+ E2CE  09 08                ORA #$08       ; Set drive 0 LED bit (bit 3)
+ E2D0  8D 82 02             STA RIOT2PBD   ; Update RIOT port (LED on)
+ E2D3  4C 7E E2  iE2D3      JMP IDLE2      ; Jump back to IDLE2 (main loop)
+
+;==============================================================================
+; IEEE-488 INTERFACE HANDLER (ATNIRQ)
+;==============================================================================
+; This routine implements the IEEE-488 interface protocol for communication 
+; between the PET/CBM computer and the disk drive. The protocol uses several
+; handshaking lines to coordinate data transfer:
+;
+; ATN   - Attention line (pulled low by controller to send commands)
+; DAV   - Data Valid (sender signals data is available)
+; NRFD  - Not Ready For Data (receiver signals not ready for data)
+; NDAC  - Not Data Accepted (receiver signals data not yet accepted)
+; EOI   - End Or Identify (signals end of transmission)
+;
+; IEEE-488 Command Structure:
+; - Primary commands (TALK/LISTEN) set device into talk/listen mode
+; - Secondary commands provide additional operation information
+; - Commands have the form: COMMAND + DEVICE ADDRESS
+; - UNLISTEN ($3F) releases all devices from listen mode
+; - UNTALK ($5F) releases all devices from talk mode
+
+;==============================================================================
+; INTERRUPT ENTRY POINT
+;==============================================================================
+; Triggers when ATN line is pulled low by the PET
+;
+ E2D6  A2 FF     ATNIRQ     LDX #$FF       ; Initialize stack pointer to $FF
+ E2D8  9A                   TXS            ; Transfer X to stack pointer (clear stack)
+ E2D9  AD 87 02             LDA RIOT2ATNPE ; Clear IRQ flag by reading the port
+ E2DC  A9 18                LDA #$18       ; Prepare mask with DAVO+EOIO (both high)
+ E2DE  0D 80 02             ORA RIOT2PAD   ; Set DAV and EOI high, keep other lines unchanged
+ E2E1  8D 80 02             STA RIOT2PAD   ; Update port
+ E2E4  A9 FF                LDA #$FF       ; Prepare all 1's 
+ E2E6  8D 02 02             STA RIOT1IEEEDO ; Clear all data lines (set high/inactive)
+
+;==============================================================================
+; MAIN COMMAND RECEIVE LOOP
+;==============================================================================
+; Sets control lines and waits for commands
+;
+ E2E9  A9 07     iE2E9      LDA #$07       ; Prepare mask with DACO+RFDO+ATNA
+ E2EB  0D 80 02             ORA RIOT2PAD   ; Set DAC, RFD, and ATNA high
+ E2EE  8D 80 02             STA RIOT2PAD   ; Update port - now ready to receive
+
+ ; Check for DAV being low (data available) or ATN status change
+ E2F1  2C 80 02  iE2F1      BIT RIOT2PAD   ; Test status of control port
+ E2F4  50 04                BVC iE2FA      ; Branch if DAV is low (bit 6=0) - data available
+ E2F6  30 F9                BMI iE2F1      ; If ATN still low (bit 7=1), keep waiting
+ E2F8  10 7B                BPL iE375      ; If ATN now high (bit 7=0), end of command sequence
+
+;==============================================================================
+; DATA RECEIVE HANDSHAKE
+;==============================================================================
+; Performs proper IEEE-488 handshake to read a byte
+;
+ E2FA  A9 FB     iE2FA      LDA #$FB       ; Prepare mask with ~RFDO (NRFD low = ready for data)
+ E2FC  2D 80 02             AND RIOT2PAD   ; Clear RFDO bit, keep others
+ E2FF  8D 80 02             STA RIOT2PAD   ; Update port - signal ready for data
+ E302  29 20                AND #$20       ; Extract EOI status (bit 5)
+ E304  85 88                STA EOIFLG     ; Store EOI flag
+ E306  AD 00 02             LDA RIOT1IEEEDI ; Read data from IEEE bus
+ E309  49 FF                EOR #$FF       ; Invert data (IEEE-488 data lines are inverted)
+ E30B  85 87                STA DATA       ; Store data byte
+ E30D  A9 FD                LDA #$FD       ; Prepare mask with ~DACO (NDAC high = data accepted)
+ E30F  2D 80 02             AND RIOT2PAD   ; Clear DACO bit, keep others
+ E312  8D 80 02             STA RIOT2PAD   ; Update port - signal data accepted
+
+
+;==============================================================================
+; IEEE-488 INTERFACE HANDLER (ATNIRQ)
+;==============================================================================
+; This routine implements the IEEE-488 interface protocol for communication 
+; between the PET/CBM computer and the disk drive. The protocol uses several
+; handshaking lines to coordinate data transfer:
+;
+; ATN   - Attention line (pulled low by controller to send commands)
+; DAV   - Data Valid (sender signals data is available)
+; NRFD  - Not Ready For Data (receiver signals not ready for data)
+; NDAC  - Not Data Accepted (receiver signals data not yet accepted)
+; EOI   - End Or Identify (signals end of transmission)
+;
+; IEEE-488 Command Structure:
+; - Primary commands (TALK/LISTEN) set device into talk/listen mode
+; - Secondary commands provide additional operation information
+; - Commands have the form: COMMAND + DEVICE ADDRESS
+; - UNLISTEN ($3F) releases all devices from listen mode
+; - UNTALK ($5F) releases all devices from talk mode
+;
+;==============================================================================
+; INTERRUPT ENTRY POINT
+;==============================================================================
+; Triggers when ATN line is pulled low by the PET
+;
+ E2D6  A2 FF     ATNIRQ     LDX #$FF       ; Initialize stack pointer to $FF
+ E2D8  9A                   TXS            ; Transfer X to stack pointer (clear stack)
+ E2D9  AD 87 02             LDA RIOT2ATNPE ; Clear IRQ flag by reading the port
+ E2DC  A9 18                LDA #$18       ; Prepare mask with DAVO+EOIO (both high)
+ E2DE  0D 80 02             ORA RIOT2PAD   ; Set DAV and EOI high, keep other lines unchanged
+ E2E1  8D 80 02             STA RIOT2PAD   ; Update port
+ E2E4  A9 FF                LDA #$FF       ; Prepare all 1's 
+ E2E6  8D 02 02             STA RIOT1IEEEDO ; Clear all data lines (set high/inactive)
+
+;==============================================================================
+; MAIN COMMAND RECEIVE LOOP
+;==============================================================================
+; Sets control lines and waits for commands
+;
+ E2E9  A9 07     iE2E9      LDA #$07       ; Prepare mask with DACO+RFDO+ATNA
+ E2EB  0D 80 02             ORA RIOT2PAD   ; Set DAC, RFD, and ATNA high
+ E2EE  8D 80 02             STA RIOT2PAD   ; Update port - now ready to receive
+
+ ; Check for DAV being low (data available) or ATN status change
+ E2F1  2C 80 02  iE2F1      BIT RIOT2PAD   ; Test status of control port
+ E2F4  50 04                BVC iE2FA      ; Branch if DAV is low (bit 6=0) - data available
+ E2F6  30 F9                BMI iE2F1      ; If ATN still low (bit 7=1), keep waiting
+ E2F8  10 7B                BPL iE375      ; If ATN now high (bit 7=0), end of command sequence
+
+;==============================================================================
+; DATA RECEIVE HANDSHAKE
+;==============================================================================
+; Performs proper IEEE-488 handshake to read a byte
+;
+ E2FA  A9 FB     iE2FA      LDA #$FB       ; Prepare mask with ~RFDO (NRFD low = ready for data)
+ E2FC  2D 80 02             AND RIOT2PAD   ; Clear RFDO bit, keep others
+ E2FF  8D 80 02             STA RIOT2PAD   ; Update port - signal ready for data
+ E302  29 20                AND #$20       ; Extract EOI status (bit 5)
+ E304  85 88                STA EOIFLG     ; Store EOI flag
+ E306  AD 00 02             LDA RIOT1IEEEDI ; Read data from IEEE bus
+ E309  49 FF                EOR #$FF       ; Invert data (IEEE-488 data lines are inverted)
+ E30B  85 87                STA DATA       ; Store data byte
+ E30D  A9 FD                LDA #$FD       ; Prepare mask with ~DACO (NDAC high = data accepted)
+ E30F  2D 80 02             AND RIOT2PAD   ; Clear DACO bit, keep others
+ E312  8D 80 02             STA RIOT2PAD   ; Update port - signal data accepted
+
+;==============================================================================
+; COMMAND PROCESSING
+;==============================================================================
+; Interprets and processes the received command byte
+;
+ E315  A0 00                LDY #$00       ; Initialize Y register to 0
+ E317  A5 87                LDA DATA       ; Load the received command
+ E319  29 60                AND #$60       ; Mask out bits 5 and 6 to determine command type
+ E31B  C9 40                CMP #$40       ; Check if it's a TALK command (01xxxxxx)
+ E31D  F0 29                BEQ iE348      ; Branch to TALK handling
+ E31F  C9 20                CMP #$20       ; Check if it's a LISTEN command (00xxxxxx)
+ E321  F0 06                BEQ iE329      ; Branch to LISTEN handling
+ E323  C9 60                CMP #$60       ; Check if it's a SECONDARY address command (11xxxxxx)
+ E325  F0 2F                BEQ iE356      ; Branch to SECONDARY handling
+ E327  D0 44                BNE iE36D      ; Otherwise, continue to DAV wait
+ 
+;==============================================================================
+; LISTEN COMMAND HANDLING
+;==============================================================================
+; Process LISTEN commands (device is being told to receive data)
+;
+ E329  A5 87     iE329      LDA DATA       ; Reload the command byte
+ E32B  C5 32                CMP LSNADR     ; Compare with our listen address
+ E32D  F0 0B                BEQ iE33A      ; If it matches, device is being addressed
+ E32F  C9 3F                CMP #$3F       ; Check if it's the UNLISTEN command (00111111)
+ E331  D0 02                BNE iE335      ; If not UNLISTEN, continue
+ E333  84 34                STY LSNACT     ; If UNLISTEN, clear listen active flag (Y=0)
+
+ ; Not our address (both talk and listen handling)
+ E335  84 36     iE335      STY ADRSED     ; Clear primary addressed flag
+ E337  4C 6D E3             JMP iE36D      ; Jump to DAV wait
+ 
+ ; This is our listen address
+ E33A  85 34     iE33A      STA LSNACT     ; Set listen active flag
+ E33C  84 35                STY TLKACT     ; Clear talk active flag (Y=0)
+
+ ; Common setup for both TALK and LISTEN when addressed
+ E33E  A9 20     iE33E      LDA #$20       ; Load default secondary address ($20)
+ E340  85 84                STA SA         ; Store in current SA
+ E342  85 85                STA ORGSA      ; Store in original SA
+ E344  85 36                STA ADRSED     ; Set primary addressed flag
+ E346  D0 25                BNE iE36D      ; Always branch to DAV wait (A != 0)
+
+;==============================================================================
+; TALK COMMAND HANDLING
+;==============================================================================
+; Process TALK commands (device is being told to send data)
+;
+ E348  84 35     iE348      STY TLKACT     ; Clear talk active flag (Y=0)
+ E34A  A5 87                LDA DATA       ; Reload command byte
+ E34C  C5 33                CMP TLKADR     ; Compare with our talk address
+ E34E  D0 E5                BNE iE335      ; If not our address, jump to not-addressed handler
+ E350  85 35                STA TLKACT     ; Set talk active flag
+ E352  84 34                STY LSNACT     ; Clear listen active flag (Y=0)
+ E354  F0 E8                BEQ iE33E      ; Always branch to common setup (Y=0)
+
+;==============================================================================
+; SECONDARY ADDRESS HANDLING
+;==============================================================================
+; Process secondary address commands
+;
+ E356  A5 36     iE356      LDA ADRSED     ; Check if device is addressed
+ E358  F0 13                BEQ iE36D      ; If not addressed, skip to DAV wait
+ E35A  A5 87                LDA DATA       ; Reload command byte
+ E35C  85 85                STA ORGSA      ; Store as original SA
+ E35E  48                   PHA            ; Save on stack
+ E35F  29 0F                AND #$0F       ; Mask out low 4 bits (actual SA)
+ E361  85 84                STA SA         ; Store as current SA
+ E363  68                   PLA            ; Restore from stack
+ E364  29 F0                AND #$F0       ; Mask out high 4 bits
+ E366  C9 E0                CMP #$E0       ; Is it a CLOSE command? (1110xxxx)
+ E368  D0 03                BNE iE36D      ; If not CLOSE, skip to DAV wait
+ E36A  20 0F EC             JSR CLOSE      ; If CLOSE, call close routine
+
+;==============================================================================
+; DAV HANDSHAKE COMPLETION
+;==============================================================================
+; Wait for DAV to go high, then continue processing
+;
+ E36D  2C 80 02  iE36D      BIT RIOT2PAD   ; Test status of control port
+ E370  50 FB                BVC iE36D      ; Loop until DAV goes high (bit 6=1)
+ E372  4C E9 E2             JMP iE2E9      ; Return to command loop
+
+;==============================================================================
+; ATN SEQUENCE COMPLETION
+;==============================================================================
+; Handle what to do when ATN line goes high (end of command sequence)
+;
+ E375  A5 34     iE375      LDA LSNACT     ; Check if listen is active
+ E377  F0 0F                BEQ iE388      ; If not listening, check if talking
+ E379  A9 FA                LDA #$FA       ; Prepare mask with ~(RFDO+ATNA)
+ E37B  2D 80 02             AND RIOT2PAD   ; Clear RFDO and ATNA bits
+ E37E  8D 80 02             STA RIOT2PAD   ; Update port - ready to receive data
+ E381  58                   CLI            ; Enable interrupts
+ E382  20 9B E3             JSR LISTEN     ; Call LISTEN routine
+ E385  4C 72 E2             JMP IDLE       ; Return to idle state
+
+ ; Check if we're in TALK mode
+ E388  A9 FC     iE388      LDA #$FC       ; Prepare mask with ~(ATNA+DACO)
+ E38A  2D 80 02             AND RIOT2PAD   ; Clear ATNA and DACO bits
+ E38D  8D 80 02             STA RIOT2PAD   ; Update port
+ E390  58                   CLI            ; Enable interrupts
+ E391  A5 35                LDA TLKACT     ; Check if talk is active
+ E393  F0 03                BEQ iE398      ; If not talking, skip to idle
+ E395  20 2B E4             JSR TALK       ; Call TALK routine
+ E398  4C 72 E2  iE398      JMP IDLE       ; Return to idle state
+
+;==============================================================================
+; LISTEN MODE DATA HANDLING
+;==============================================================================
+; Process data when device is in listen mode
+;
+ E39B  A9 04     LISTEN     LDA #$04       ; Prepare mask with RFDO (RFD high)
+ E39D  0D 80 02             ORA RIOT2PAD   ; Set RFDO bit
+ E3A0  8D 80 02             STA RIOT2PAD   ; Update port - not ready for data
+ E3A3  2C 80 02  iE3A3      BIT RIOT2PAD   ; Test status of control port
+ E3A6  70 FB                BVS iE3A3      ; Loop until DAV goes low (bit 6=0)
+ E3A8  20 AD E9             JSR FNDWCH     ; Find write channel for this SA
+ E3AB  B0 05                BCS iE3B2      ; If not found, branch
+ E3AD  B5 BE                LDA CHNRDY,X   ; Load channel ready status
+ E3AF  6A                   ROR            ; Check if open for listen (bit 0)
+ E3B0  B0 49                BCS iE3FB      ; If open for listen, branch to data receive
+ E3B2  A5 85     iE3B2      LDA ORGSA      ; Load original SA
+ E3B4  29 F0                AND #$F0       ; Mask out high 4 bits
+ E3B6  C9 F0                CMP #$F0       ; Is it OPEN? (1111xxxx)
+ E3B8  F0 41                BEQ iE3FB      ; If OPEN, branch to data receive
+ E3BA  A5 84                LDA SA         ; Load current SA
+ E3BC  C9 01                CMP #$01       ; Is it command channel? (SA=1)
+ E3BE  F0 0E                BEQ iE3CE      ; If command channel, handle specially
+ E3C0  2C 80 02  iE3C0      BIT RIOT2PAD   ; Test status of control port
+ E3C3  50 FB                BVC iE3C0      ; Loop until DAV goes high (bit 6=1)
+ E3C5  A9 FD                LDA #$FD       ; Prepare mask with ~DACO
+ E3C7  2D 80 02             AND RIOT2PAD   ; Clear DACO bit
+ E3CA  8D 80 02             STA RIOT2PAD   ; Update port - data accepted
+ E3CD  60                   RTS            ; Return from subroutine
+
+  ; Command channel handling
+ E3CE  A9 FB     iE3CE      LDA #$FB       ; Prepare mask with ~RFDO
+ E3D0  2D 80 02             AND RIOT2PAD   ; Clear RFDO bit
+ E3D3  8D 80 02             STA RIOT2PAD   ; Update port - ready for data
+ E3D6  A9 FD                LDA #$FD       ; Prepare mask with ~DACO
+ E3D8  2D 80 02             AND RIOT2PAD   ; Clear DACO bit
+ E3DB  8D 80 02             STA RIOT2PAD   ; Update port - data accepted
+ E3DE  2C 80 02  iE3DE      BIT RIOT2PAD   ; Test status of control port
+ E3E1  50 FB                BVC iE3DE      ; Loop until DAV goes high (bit 6=1)
+ E3E3  A9 02                LDA #$02       ; Prepare mask with DACO
+ E3E5  0D 80 02             ORA RIOT2PAD   ; Set DACO bit
+ E3E8  8D 80 02             STA RIOT2PAD   ; Update port - data not accepted
+ E3EB  A9 04                LDA #$04       ; Prepare mask with RFDO
+ E3ED  0D 80 02             ORA RIOT2PAD   ; Set RFDO bit
+ E3F0  8D 80 02             STA RIOT2PAD   ; Update port - not ready for data
+ E3F3  2C 80 02  iE3F3      BIT RIOT2PAD   ; Test status of control port
+ E3F6  50 FB                BVC iE3F3      ; Loop until DAV goes low (bit 6=0)
+ E3F8  4C CE E3             JMP iE3CE      ; Loop until ATN is pulled
+
+ ; Data receive handling
+ E3FB  A9 FB     iE3FB      LDA #$FB       ; Prepare mask with ~RFDO
+ E3FD  2D 80 02             AND RIOT2PAD   ; Clear RFDO bit
+ E400  8D 80 02             STA RIOT2PAD   ; Update port - ready for data
+ E403  29 20                AND #$20       ; Extract EOI status (bit 5)
+ E405  85 88                STA EOIFLG     ; Store EOI flag
+ E407  AD 00 02             LDA RIOT1IEEEDI ; Read data from IEEE bus
+ E40A  49 FF                EOR #$FF       ; Invert data (IEEE-488 data lines are inverted)
+ E40C  85 87                STA DATA       ; Store data byte
+ E40E  78                   SEI            ; Disable interrupts
+ E40F  A9 FD                LDA #$FD       ; Prepare mask with ~DACO
+ E411  2D 80 02             AND RIOT2PAD   ; Clear DACO bit
+ E414  8D 80 02             STA RIOT2PAD   ; Update port - data accepted
+ E417  2C 80 02  iE417      BIT RIOT2PAD   ; Test status of control port
+ E41A  50 FB                BVC iE417      ; Loop until DAV goes high (bit 6=1)
+ E41C  A9 02                LDA #$02       ; Prepare mask with DACO
+ E41E  0D 80 02             ORA RIOT2PAD   ; Set DACO bit
+ E421  8D 80 02             STA RIOT2PAD   ; Update port - data not accepted
+ E424  20 FE E7             JSR PUT        ; Put byte in buffer
+ E427  58                   CLI            ; Enable interrupts
+ E428  4C 9B E3             JMP LISTEN     ; Loop back to LISTEN
+
+;==============================================================================
+; TALK MODE DATA HANDLING
+;==============================================================================
+; Process data when device is in talk mode (sending data to controller)
+;
+ E42B  20 B0 E9  TALK       JSR FNDRCH     ; Find read channel for this SA
+ E42E  B0 06                BCS NOTLK      ; If not found, exit talk mode
+ E430  A6 83     iE430      LDX LINDX      ; Load channel index
+ E432  B5 BE                LDA CHNRDY,X   ; Load channel ready status
+ E434  30 01                BMI iE437      ; If bit 7 set (read channel ready), continue
+ E436  60        NOTLK      RTS            ; Otherwise return
+ E437  2C 82 02  iE437      BIT RIOT2PBD   ; Test status of PB port
+ E43A  10 FB                BPL iE437      ; Loop until RFD goes high (bit 7=0)
+ E43C  BD D9 10             LDA CHNDAT,X   ; Load data from channel
+ E43F  49 FF                EOR #$FF       ; Invert data (IEEE-488 data lines are inverted)
+ E441  8D 02 02             STA RIOT1IEEEDO ; Output data to IEEE bus
+ E444  B5 BE                LDA CHNRDY,X   ; Reload channel ready status
+ E446  09 E7                ORA #$E7       ; Prepare mask (complicated operation)
+ E448  2D 80 02             AND RIOT2PAD   ; Apply to port (clear DAV and EOI)
+ E44B  8D 80 02             STA RIOT2PAD   ; Update port - data valid, no EOI
+ E44E  2C 82 02  iE44E      BIT RIOT2PBD   ; Test status of PB port
+ E451  10 0D                BPL iE460      ; If RFD is low, get next byte
+ E453  50 F9                BVC iE44E      ; If DAC is high, wait
+ E455  A9 18                LDA #$18       ; Prepare mask with DAVO+EOIO
+ E457  0D 80 02             ORA RIOT2PAD   ; Set DAV and EOI high
+ E45A  8D 80 02             STA RIOT2PAD   ; Update port - data not valid
+ E45D  4C 72 E2             JMP IDLE       ; Return to idle state
+ E460  20 D6 EC  iE460      JSR GET        ; Get next byte from buffer
+ E463  2C 82 02  iE463      BIT RIOT2PBD   ; Test status of PB port
+ E466  50 FB                BVC iE463      ; Wait until DAC goes high (bit 6=1)
+ E468  A9 FF                LDA #$FF       ; Load all 1's
+ E46A  8D 02 02             STA RIOT1IEEEDO ; Clear all data lines
+ E46D  A9 18                LDA #$18       ; Prepare mask with DAVO+EOIO
+ E46F  0D 80 02             ORA RIOT2PAD   ; Set DAV and EOI high
+ E472  8D 80 02             STA RIOT2PAD   ; Update port - data not valid
+ E475  2C 82 02  iE475      BIT RIOT2PBD   ; Test status of PB port
+ E478  70 FB                BVS iE475      ; Wait until DAC goes low (bit 6=0)
+ E47A  50 B4                BVC iE430      ; Branch back to send next byte
 
 ; NEXT TRACK & SECTOR
 ; RETURNS NEXT AVAILABLE TRACK & SECTOR

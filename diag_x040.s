@@ -1206,11 +1206,16 @@ create_diag_msg:
 ; Destroys A
 ieee_init:
     ; Initialize ports
+
+    ; Start with the DIO lines
+    ; No need to set input ports to inputs, as they are by default
     LDA #$FF
-    STA IEEE_DATA_PORT      ; Set data lines high
-    STA IEEE_DATA_DIR       ; Set data line directions to outputs
+    STA IEEE_DATA_OUT_PORT  ; Set output data lines high (zeros)
+    STA IEEE_DATA_OUT_DIR   ; Set output data line directions to outputs
+
+    ; Set the control and interface management lines
     LDA #$1C
-    STA IEEE_CONTROL        ; Set RFDO, EOIO, DAVO high 
+    STA IEEE_CONTROL        ; Set output NRFD, EOI, DAV high (de-asserted) 
     LDA #$1F
     STA IEEE_CONTROL_DIR    ; Set lines 0-4 to outputs, 5-7 to inputs
 
@@ -1219,62 +1224,70 @@ ieee_init:
     AND #$07                ; Mask off the bits we don't want
     ORA #$48                ; Create talk address adding 8 and ORing with $40
     STA TALK_ADDR
-    EOR #$60                ; Create listen address
+    EOR #$68                ; Create listen address same way
     STA LISTEN_ADDR
 
     ; Enable ATN interrupts
-    LDA #$0A                ; Value used in original ROM
-    STA RIOT_UE1_ATNPE      ; Enable ATN to generate interrupts
+    ; RIOT_UE1_ATNPE is the ATN interrupt enable register positive edge - we
+    ; use positive edge as the IEEE-488 ATN line is inverted before it reaches
+    ; UE1 (hence it actually triggers on ATN going low on the bus).
+    ; I don't understand why $0A 1010 is used here, but is the value from the
+    ; original ROM
+    LDA #$0A
+    STA RIOT_UE1_ATNPE
 
     ; Set interrupt handler and enable interrupts
-    SEI
-    LDA #<ieee_irq_handler
-    STA IRQ_HANDLER
-    LDA #>ieee_irq_handler
-    STA IRQ_HANDLER+1
-    CLI                     
+    LDX #<ieee_irq_handler
+    LDY #>ieee_irq_handler
+    JSR set_irq_handler
     RTS
 
 ; IEEE-488 ATN interrupt handler
 ieee_irq_handler:
-    ; Save registers
+    ; Save registers and LED state.  We will restore all of this before
+    ; returning from the interrupt. 
     PHA
     TXA
     PHA
     TYA
     PHA
-    LDA RIOT_UE1_PBD        ; Store off LED state
-    AND #$38
+    LDA RIOT_UE1_PBD        ; Retrieve LED state
+    AND #$38                ; Just store off LED pin state
     PHA
     
-    ; Clear interrupt flag
+    ; Clear interrupt flag - 6532 datasheet says "The PA7 [ATN] flag is
+    ; cleared when the Interrupt Flag Register is read."
     LDA RIOT_UE1_ATNPE
 
     ; Turn on DR0 and DR1 LEDs to show we're in the interrupt handler
     LDA #DR01_LEDS
-    STA RIOT_UE1_PBD        ; Set LED pattern to both drive LEDs, solid on
+    STA RIOT_UE1_PBD
     
     ; Prepare control lines
-    LDA #$18                ; DAVO+EOIO
-    ORA IEEE_CONTROL        ; Free control lines
+    LDA #$18                ; DAVO + EOIO - set to high
+    ORA IEEE_CONTROL
     STA IEEE_CONTROL
     
-    LDA #$FF
-    STA IEEE_DATA_PORT      ; Clear data lines
+    LDA #$FF                ; Clear data lines
+    STA IEEE_DATA_PORT
     
+@atn_wait:
     ; ATN sequence - wait for commands
-    LDA #$07                ; DACO, RFDO, ATNA
+    LDA #$07                ; ~DACO, RFDO, ATNA all high
+                            ; As DACO is inverted, NDAC low
+                            ; NRFD high
+                            ; So, waiting for a byte from the controller
     ORA IEEE_CONTROL
     STA IEEE_CONTROL
 
-@atn_wait:
     BIT IEEE_CONTROL
     BVC @atn_get_cmd        ; DAV low - command ready
     BMI @atn_wait           ; ATN still low
     BPL @atn_end            ; ATN went high - end of command sequence
 
 @atn_get_cmd:
-    LDA #$FB                ; Set NRFD low
+    ; Following sequence reads a byte from the data bus
+    LDA #$FB                ; Set RFDO low - sets NRFD low
     AND IEEE_CONTROL
     STA IEEE_CONTROL
     
@@ -1285,29 +1298,30 @@ ieee_irq_handler:
     EOR #$FF                ; Invert (IEEE is negative logic)
     STA IEEE_DATA_BYTE      ; Save command byte
     
-    LDA #$FD                ; Set NDAC low
+    LDA #$FD                ; Set ~DACO low, sets NDAC high
     AND IEEE_CONTROL
     STA IEEE_CONTROL
     
     ; Process command byte
-    LDY #$00
-    LDA IEEE_DATA_BYTE
-    AND #$60               ; Check command type
-    CMP #$40               ; Check if TALK
+    LDY #$00                ; Store 0 in Y for later use
+    LDA IEEE_DATA_BYTE      ; Get our data byte 
+    AND #$60                ; Check command type by checking TALK/LISTEN bits
+    CMP #$40                ; Check if TALK command
     BEQ @handle_talk
-    CMP #$20               ; Check if LISTEN
+    CMP #$20                ; Check if LISTEN command
     BEQ @handle_listen
-    CMP #$60               ; Check if SECONDARY
+    CMP #$60                ; Check if SECONDARY command
     BEQ @handle_secondary
-    BNE @atn_next          ; OTHER command
+    BNE @atn_next           ; OTHER command
 
+; Now ATN has been raised, see if we have any work to do.
 @atn_end:
     ; ATN is now high - check if we were addressed
     LDA IEEE_LISTEN_ACTIVE
-    BEQ @check_talk        ; Not listener
+    BEQ @check_talk         ; Not listener - branch to see if we're talker
     
     ; We're listener - prepare for data transfer
-    LDA #$FA               ; Set ATN and NRFD low
+    LDA #$FA                ; Set ATN and NRFD low
     AND IEEE_CONTROL
     STA IEEE_CONTROL
     
@@ -1317,10 +1331,11 @@ ieee_irq_handler:
 
 @check_talk:
     LDA IEEE_TALK_ACTIVE
-    BEQ @atn_exit          ; Not talker
+    BEQ @atn_exit           ; Not talker
     
     ; We're talker - prepare for data transfer  
-    LDA #$FC               ; Clear ATN and NDAC
+    LDA #$FC                ; Set ATNA and ~DAC low, so relinquish control of
+                            ; NDAC line?
     AND IEEE_CONTROL
     STA IEEE_CONTROL
     
@@ -1357,9 +1372,9 @@ ieee_irq_handler:
     BNE @atn_next           ; Branch always, as A non-zero
 
 @handle_talk:
-    STY IEEE_TALK_ACTIVE    ; Clear talk active
-    LDA IEEE_DATA_BYTE
-    CMP TALK_ADDR
+    STY IEEE_TALK_ACTIVE    ; Clear talk active (Y is set to zero before this)
+    LDA IEEE_DATA_BYTE      ; Get our data byte
+    CMP TALK_ADDR           ; Compare with our TALK address
     BNE @not_addressed
     STA IEEE_TALK_ACTIVE    ; Set talk active
     STY IEEE_LISTEN_ACTIVE  ; Clear listen active
@@ -1384,7 +1399,7 @@ ieee_irq_handler:
     JSR close_channel       ; Handle close command
     
 @not_addressed:
-    STY IEEE_ADDRESSED      ; Clear addressed flag
+    STY IEEE_ADDRESSED      ; Clear addressed flag - also handles untalk
 
 @atn_next:
     BIT IEEE_CONTROL        ; Wait for DAV high
@@ -1504,18 +1519,20 @@ send_byte:
 
     ; Regular byte - set EOIO high, DAVO low
     LDA IEEE_CONTROL
-    AND #$EF                ; Clear DAVO (bit 4) only
+    AND #$EF                ; Pull DAVO (bit 4) low - to signal byte available
     STA IEEE_CONTROL
     JMP @wait_ack
     
 @with_eoi:
     ; Last byte - set EOIO low (EOI asserted), DAVO low
     LDA IEEE_CONTROL
-    AND #$E7                ; Clear both EOIO (bit 3) and DAVO (bit 4)
+    AND #$F7                ; Clear EOIO first
     STA IEEE_CONTROL
-    
+    AND #$E7                ; Now clear and DAVO (bit 4)
+    STA IEEE_CONTROL
+
 @wait_ack:
-    ; Wait for NDAC high
+    ; Wait for NDAC high (DACI - note this is Port B)  XXXX got to here
     BIT RIOT_UE1_PBD
     BVC @wait_ack
     
@@ -1531,8 +1548,24 @@ nmi_handler:
     RTI
 
 ; Our IRQ handler
+;
+; We jump to the address configured in zero page (and this must be initialized)
+; before interrupts are enabled, or bad things will happen.  This allows us
+; to change what gets called on interrupts dynamically.
 irq_handler:
-    JMP (IRQ_HANDLER)   ; Indirect jump to handler address stored in zero page
+    JMP (IRQ_HANDLER)
+
+; Function to set our interrupt handler
+;
+; X contains low byte, Y high byte
+;
+; Retains all registers, and returns with interrupts enabled
+set_irq_handler:
+    SEI
+    STX IRQ_HANDLER
+    STY IRQ_HANDLER+1
+    CLI
+    RTS
 
 ; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
 ; to copy the routine(s) we want from this binary to the shared RAM and then

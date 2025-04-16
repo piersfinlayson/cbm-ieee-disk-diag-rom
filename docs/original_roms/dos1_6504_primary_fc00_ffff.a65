@@ -3,7 +3,10 @@
 ; 
 ; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
-; The comments are Copyright (c) 2025 Piers Finlayson.
+; Original version of this file was sourced from:
+; http://www.6502.org/users/andre/petindex/drives/roms/
+;
+; New comments are Copyright (c) 2025 Piers Finlayson.
 
 ;===============================================================================
 ; COMMODORE DISK DRIVE CONTROLLER - SYSTEM OVERVIEW
