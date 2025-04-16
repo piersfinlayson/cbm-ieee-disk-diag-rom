@@ -68,6 +68,54 @@ intro_str_table:
 INTO_STR_TABLE_END:
 INTRO_STR_TABLE_LEN = (INTO_STR_TABLE_END - intro_str_table)
 
+; Maps TALK channels to string methods to call to create a string buffer to
+; send.
+;
+; Each entry contains 5 bytes:
+; - Byte 0: Channel number (0-15)
+; - Bytes 1/2: Word containing pointer to channel's name/purpose
+; - Bytes 3/4: Word containing pointer to string method to call to create
+;
+; Strings are created and stored in STRING_BUF, which is stored in RAM.
+
+; Channel names
+CbmString StrChannelListing, "Channel listing"
+CbmString StrRomInfo, "ROM Info"
+CbmString StrResultsSummary, "Test Result Summary"
+CbmString StrStatus, "Status"
+
+; Talk string table entry length
+TALK_STR_TABLE_ENTRY_LEN = 5
+
+; Table
+talk_str_table:
+    .byte 0                         ; Channel num
+    .word StrChannelListing
+    .word build_channel_listing_str
+    .byte 1                         ; Channel num
+    .word StrRomInfo
+    .word build_rom_info_str
+    .byte 2                         ; Channel num
+    .word StrResultsSummary
+    .word build_test_results_summary_str
+    .byte 15                        ; Channel num
+    .word StrStatus
+    .word build_status_str
+TALK_STR_TABLE_END:
+TALK_STR_TABLE_LEN = (TALK_STR_TABLE_END - talk_str_table)
+CbmString StrInvalidChannel, "Invalid channel"
+
+; String to use in status response indicating failed tests
+CbmString StrTestsFailed, "Failed tests(s)"
+END_STR_TESTS_FAILED:
+.assert (END_STR_TESTS_FAILED - StrTestsFailed) <= 16, error, "StrTestsFailed too long"
+; String to use in status response indicating passed tests
+CbmString StrTestsPassed, "All tests passed"
+END_STR_TESTS_PASSED:
+.assert (END_STR_TESTS_PASSED - StrTestsPassed) <= 16, error, "StrTestsPassed too long"
+
+CbmString StrNotImplemented, "Not implemented"
+
 ; Pages to test in our first RAM test
 RamTest0:
     .byte $11, $12, $13
@@ -1264,20 +1312,136 @@ add_newline:
     INY                     ; Increment Y
     RTS
 
-; Create initial message to be sent when put into TALK mode via IEEE-488
-create_intro_msg:
-    ; Store registers on stack
-    PHA
-    TXA
-    PHA
-    TYA
-    PHA
-
-    LDY #$00                ; Initialize buffer index
+; Sets up string buffer to write strings into
+setup_string_buf:
+    LDY #$00
     LDA #<STRING_BUF
     STA BUF_PTR
     LDA #>STRING_BUF
     STA BUF_PTR+1
+    RTS
+
+; Builds the invalid channel string to transmit when put into TALK mode on a
+; channel which has no data to send.
+build_invalid_channel_str:
+    JSR setup_string_buf
+
+    LDA #<StrInvalidChannel
+    STA STR_PTR
+    LDA #>StrInvalidChannel
+    STA STR_PTR+1
+
+    JSR add_string
+    RTS
+
+; Figures out if any of the tests failed, by comparing the various zero page
+; addresses that store test resuls with 0 (success).
+; 
+; Returns Z = 1 if all tests passed, Z = 0 otherwise
+test_failed_any:
+    LDA #$00
+    CMP RESULT_ZP
+    BNE @failed
+    CMP DEVICE_ID
+    BNE @failed
+    CMP RESULT_RAM_TEST
+    BNE @failed
+    CMP RESULT_6504_BOOT
+    BNE @failed
+    CMP RESULT_6504_TO
+    BNE @failed
+    RTS                 ; Z = 1
+
+@failed:
+    RTS                 ; Z = 0
+
+add_char:
+    STA (BUF_PTR),Y
+    INY
+
+; Build a status string.  This is what we transmit when instructed to talk on
+; channel 15.  We output a string in the same format as a standard Commodore
+; disk drive would:
+;
+;   <status code>,<status string>,<track number>,<sector number>
+build_status_str:
+    LDX #$00
+    JSR setup_string_buf
+    BEQ @status_ok
+
+    LDX #74             ; Use "DRIVE NOT READY" to indicate failed test(s)
+
+@status_ok:
+    TXA                 ; Put code in A - used by output_decimal_byte
+    PHA                 ; Store it on the stack for later
+    JSR output_decimal_byte
+    BCS @done           ; Exit if buffer full
+
+    LDA #$2C            ; Comma
+    JSR add_char
+    BEQ @done           ; Exit if buffer full
+    
+    PLA                 ; Get status code back
+    BEQ @status_ok_str
+
+    LDA #<StrTestsFailed
+    STA STR_PTR
+    LDA #>StrTestsFailed
+    STA STR_PTR+1
+    JMP @add_string
+
+@status_ok_str:
+    LDA #<StrTestsPassed
+    STA STR_PTR
+    LDA #>StrTestsPassed
+    STA STR_PTR+1
+
+@add_string:
+    JSR add_string
+    BEQ @done           ; Exit if buffer full
+
+    LDA #$2C            ; Comma
+    JSR add_char
+    BEQ @done           ; Exit if buffer full
+
+    LDA #$30            ; Zero
+    JSR add_char
+    BEQ @done           ; Exit if buffer full
+
+    LDA #$2C            ; Comma
+    JSR add_char
+    BEQ @done           ; Exit if buffer full
+
+    LDA #$30            ; Zero
+    JSR add_char
+    BEQ @done           ; Exit if buffer full
+
+@done:
+    RTS
+
+build_test_results_summary_str:
+    JSR setup_string_buf
+
+    LDA #<StrNotImplemented
+    STA STR_PTR
+    LDA #>StrNotImplemented
+    STA STR_PTR+1
+    JSR add_string
+    RTS
+
+build_channel_listing_str:
+    JSR setup_string_buf
+
+    LDA #<StrNotImplemented
+    STA STR_PTR
+    LDA #>StrNotImplemented
+    STA STR_PTR+1
+    JSR add_string
+    RTS
+
+; Create initial message to be sent when put into TALK mode via IEEE-488
+build_rom_info_str:
+    JSR setup_string_buf
 
     LDX #0                  ; String table index
 @string_loop:
@@ -1322,13 +1486,6 @@ create_intro_msg:
     LDA (BUF_PTR),Y         ; Get the last byte
     ORA #$80                ; Set the high bit
     STA (BUF_PTR),Y         ; Store it in the buffer
-
-    ; Restore registers
-    PLA
-    TAY
-    PLA
-    TAX
-    PLA
 
     RTS
 
@@ -1729,27 +1886,43 @@ talk_handler:
     RTS
 
 @cmd_talk:
-    ; Create introduction message - placed in STRING_BUF
-    JSR create_intro_msg
+    ; Get the channel
+    LDA #$00                ; Initialize index into talk_str_table
 
-    LDA #DR0_LED
-    STA RIOT_UE1_PBD        ; Set drive 0 LED on
+@lookup:
+    TAX                     ; Store index in X
+    LDA IEEE_SEC_ADDR       ; Load the channel
+    CMP talk_str_table,X
+    BEQ @valid_chan         ; Found a channel
 
-    ; Send it
+    TXA                     ; Move index back to A for maths
+    CLC
+    ADC #TALK_STR_TABLE_ENTRY_LEN   ; Move onto the next entry
+    CMP #TALK_STR_TABLE_LEN ; Check if we're over the end of the table
+    BCC @lookup             ; Nope, go around end
+
+    ; We failed to find an entry - build a None string instead
+    JSR build_invalid_channel_str
+    JMP @transmit
+
+@valid_chan:
+    ; Get pointer to routine to build the appropriate string (at bytes 3/4)
+    ; from the channel number index
+    LDA talk_str_table+3,X
+    STA IEEE_TEMP_PTR
+    LDA talk_str_table+4,X
+    STA IEEE_TEMP_PTR+1
+    JSR IEEE_TEMP_PTR       ; Call the routine
+
+@transmit:
+    ; Send the string from STRING_BUF
     LDX #$00
 @cmd_send_loop:
-    LDA #DR1_LED
-    STA RIOT_UE1_PBD        ; Set drive 0 LED on
-    
     LDA STRING_BUF,X        ; Load from diags message
     BMI @last_byte          ; Last byte has MSB set
     JSR send_byte           ; Send the byte
     BIT IEEE_CONTROL        ; Check ATN
     BMI @done               ; unwind
-
-    LDA RIOT_UE1_PBD
-    EOR #DR01_LEDS          ; Toggle the LED state
-    STA RIOT_UE1_PBD        ; Set the new LED state
 
     INX
     BNE @cmd_send_loop
