@@ -107,8 +107,6 @@ STJ = $16 + ZP_OFFSET   ; string handling - temporary value
 ; - add_failed_zp_chips
 NROC = TEMP_A               ; whether we've output any chips
 NRTR = TEMP_B               ; ram test result for processing
-NRI = TEMP_C                ; index for the chip
-NRY = TEMP_X                ; temp Y storage
 
 BUF_PTR = TEMP_PTR1
 STR_PTR = TEMP_PTR2

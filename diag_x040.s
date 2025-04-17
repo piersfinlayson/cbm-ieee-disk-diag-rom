@@ -148,19 +148,6 @@ CbmString StrPassed, "Passed"
 CbmString StrNotAttempted, "Not Attempted"
 CbmString StrSpaceDashSpace, " - "
 
-; Names of the various RAM chips.
-; 'U' isn't included to simplify handling code
-; Ordered from LSB and RESULT_RAM_TEST upwards
-RamChipNames:
-    .byte 'C', '5'
-    .byte 'D', '5'
-    .byte 'E', '5'
-    .byte 'F', '5'
-    .byte 'C', '4'
-    .byte 'D', '4'
-    .byte 'E', '4'
-    .byte 'F', '4'
-
 ; Pages to test in our first RAM test
 RamTest0:
     .byte $11, $12, $13
@@ -1747,7 +1734,16 @@ add_failed_ram_chips:
 
     ; Now log any failed RAM chips
     ; We do this by processing RESULT_RAM_TEST.  A '1' in a bit indicates a
-    ; failed chip.  We use (2 x bit number) to access RamChipNames
+    ; failed chip.
+    ; - Bit 0 - UC5
+    ; - Bit 1 - UD5
+    ; - Bit 2 - UE5
+    ; - Bit 3 - UF5
+    ; - Bit 4 - UC4
+    ; - Bit 5 - UD4
+    ; - Bit 6 - UE4
+    ; - Bit 7 - UF4
+
     LDA RESULT_RAM_TEST         ; Load the RAM test result
     STA NRTR                    ; Store for processing
     LDX #$00                    ; X will be our bit counter (0-7)
@@ -1755,52 +1751,54 @@ add_failed_ram_chips:
     STA NROC                    ; Store in zero page
 
 @chip_loop:
-    LSR NRTR                    ; Shift right to check current bit
-    BCC @next_bit               ; Skip if this bit is not set (no failure)
+    LSR NRTR                ; Shift right to check current bit
+    BCC @next_bit           ; Skip if this bit is not set (no failure)
 
     ; This chip failed - output its name
-    LDA NROC                    ; Check if we've output any chips yet
-    BEQ @first_chip             ; Skip comma for first chip
+    LDA NROC                ; Check if we've output any chips yet
+    BEQ @first_chip         ; Skip comma for first chip
 
     JSR add_comma_space
-    BEQ @done                   ; Exit if buffer full
+    BEQ @done               ; Exit if buffer full
 
 @first_chip:
-    INC NROC                    ; Mark that we've output at least one chip
+    INC NROC                ; Mark that we've output at least one chip
 
     ; Output the 'U' at the beginning of the name
-    LDA #$55                    ; 'U' character
+    LDA #$55                ; 'U' character
     JSR add_char
-    BEQ @done                   ; Exit if buffer full
+    BEQ @done               ; Exit if buffer full
 
-    ; Get the chip name from RamChipNames
-    TXA                         ; Put bit number in A
-    ASL A                       ; Multiply by 2 for RamChipNames indexing
-    STY NRY                     ; Store String index Y for later 
-    TAY                         ; Use as index
-    STY NRI                     ; Store index
-    
-    ; Output first character of chip name
-    LDA RamChipNames,Y          ; Get the letter (C, D, E, F)
-    LDY NRY                     ; Reload String index Y
+    ; Calculate and output second character (C, D, E, or F)
+    TXA                     ; Get bit number
+    AND #$03                ; Mask to get 0-3 (for both groups)
+    CLC
+    ADC #$43                ; Add ASCII 'C' to the bit nummber 0-3 mask to get
+                            ; C, D, E or F
     JSR add_char
-    BEQ @done                   ; Exit if buffer full
+    BEQ @done               ; Exit if buffer full
     
-    ; Output second character of chip name
-    STY NRY                     ; Save off new String index Y
-    LDY NRI                     ; Reload chip index
-    LDA RamChipNames+1,Y        ; Get the number (4 or 5)
-    LDY NRY                     ; Reload String index
+    ; Calculate and output third character (4 or 5 - 5 for lower nibble, 4 for
+    ; upper)
+    TXA                     ; Get bit number (index) again
+    AND #$04                ; Check if bit is in upper half (bits 4-7)
+    BEQ @output_five        ; If 0, output '5'
+    LDA #$34                ; ASCII '4'
+    JMP @output_digit
+@output_five:
+    LDA #$35                ; ASCII '5'
+@output_digit:
     JSR add_char
-    BEQ @done                   ; Exit if buffer full
+    BEQ @done               ; Exit if buffer full
 
 @next_bit:
-    INX                         ; Move to next bit
-    CPX #$08                    ; Check if we've done all 8 bits
-    BCC @chip_loop              ; Continue if X < 8
+    INX                     ; Move to next bit
+    CPX #$08                ; Check if we've done all 8 bits
+    BCC @chip_loop          ; Continue if X < 8
 
-    LDA #$01                    ; Set A to 1 to show buffer not full
+    LDA #$01                ; Set A to 1 to show buffer not full
 
+    ; Fall through to RTS
 @done:
     RTS
 
