@@ -88,14 +88,13 @@ CbmString StrStatus, "Drive status"
 ; Channel string
 CbmString StrChannel, "Channel "
 
-; Talk string table entry length
-TALK_STR_TABLE_ENTRY_LEN = 5
-
 ; Table
 talk_str_table:
     .byte 0                         ; Channel num
     .word StrChannelListing
     .word build_channel_listing_str
+END_TALK_STR_TABLE_FIRST_ENTRY:
+TALK_STR_TABLE_ENTRY_LEN = (END_TALK_STR_TABLE_FIRST_ENTRY - talk_str_table)
     .byte 1                         ; Channel num
     .word StrTestSummary
     .word build_summary_str
@@ -1382,6 +1381,7 @@ build_invalid_channel_str:
     STA STR_PTR+1
 
     JSR add_string_no_nl
+    JSR mark_last_byte_str
     RTS
 
 ; Figures out if any of the tests failed, by comparing the various zero page
@@ -1408,6 +1408,7 @@ test_failed_any:
 add_char:
     STA (BUF_PTR),Y
     INY
+    RTS
 
 ; Build a test summary string.  Simply says whether all tests passed or some
 ; some test(s) failed.
@@ -1432,6 +1433,7 @@ build_summary_str:
 
 @add_string:
     JSR add_string_no_nl
+    JSR mark_last_byte_str
     RTS
 
 ; Build a status string.  This is what we transmit when instructed to talk on
@@ -1520,6 +1522,7 @@ build_status_str:
     JSR output_decimal_byte ; Output it
 
 @done:
+    JSR mark_last_byte_str
     RTS
 
 ; Add "Passed" string
@@ -1917,6 +1920,7 @@ build_test_results_str:
 
     JSR add_6504_results
 @done:
+    JSR mark_last_byte_str
     RTS
 
 ; Build a string listing all available channels and their purposes.
@@ -1971,6 +1975,7 @@ build_channel_listing_str:
     BCC @channel_loop       ; If not, continue loop
     
 @done:
+    JSR mark_last_byte_str
     RTS
 
 ; Create initial message to be sent when put into TALK mode via IEEE-488
@@ -2016,22 +2021,31 @@ build_rom_info_str:
     ; Otherwise fall through to done
 
 @done:
-    DEY              
-    LDA (BUF_PTR),Y         ; Get the last byte
-    ORA #$80                ; Set the high bit
-    STA (BUF_PTR),Y         ; Store it in the buffer
-
+    JSR mark_last_byte_str
     RTS
 
 @do_version:
     JSR add_version_number
     BEQ @done
-    BNE @next_string
+    ; Fall through into do_underline - we need this after adding version
+    ; number
 
 @do_underline:
     JSR add_underline       ; Add underline characters
     BEQ @done
     BNE @next_string
+
+mark_last_byte_str:
+    DEY              
+    LDA (BUF_PTR),Y         ; Get the last byte
+    ORA #$80                ; Set the high bit
+    STA (BUF_PTR),Y         ; Store it in the buffer
+    INY                     ; Increment Y again.  Although no-one will be
+                            ; writing to this string again, it's important
+                            ; that Z = 1 if the buffer is full.  INY does this
+                            ; because if Y was 0 when calling, it will be now,
+                            ; hence Z is set to 1.
+    RTS
 
 ; Add underline characters based on the length of the last string
 add_underline:
@@ -2089,10 +2103,7 @@ add_version_number:
     ; Handle PATCH_VERSION
     LDA #PATCH_VERSION      ; Load the immediate value
     JSR output_decimal_byte
-    BCS @done               ; Exit if buffer full
     
-    ; Add CR after version number
-    JSR add_newline
 @done:
     RTS
 
@@ -2449,13 +2460,22 @@ talk_handler:
     JMP @transmit
 
 @valid_chan:
+    LDA #DR0_LED
+    STA RIOT_UE1_PBD        ; Set drive 0 LED on
+
     ; Get pointer to routine to build the appropriate string (at bytes 3/4)
-    ; from the channel number index
+    ; from the channel number index.
+    ; As 6502 doesn't support indirect JSR, we dynamically build a JMP
+    ; instruction which jumps to the routine we want.  We build it at a fixed
+    ; location.  We can then JSR to it, returning us into the place we want.
     LDA talk_str_table+3,X
-    STA IEEE_TEMP_PTR
+    STA IEEE_JMP_ADDR
     LDA talk_str_table+4,X
-    STA IEEE_TEMP_PTR+1
-    JSR IEEE_TEMP_PTR       ; Call the routine
+    STA IEEE_JMP_ADDR+1
+    JSR indirect_jsr
+
+    LDA #DR1_LED
+    STA RIOT_UE1_PBD        ; Set drive 1 LED on
 
 @transmit:
     ; Send the string from STRING_BUF
@@ -2577,6 +2597,13 @@ set_irq_handler:
     STY IRQ_HANDLER+1
     CLI
     RTS
+
+; "Routine" which jumps to an indirect address.  This is in place of being
+; to JSR to an indirect address, which the 6502 doesn't support.  Only actual
+; routines must be jumped to here, or they won't return to the point that did
+; JSR indirect_jsr.
+indirect_jsr:
+    JMP (IEEE_JMP_ADDR)     ; Jump to the routine we pointed to
 
 ; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
 ; to copy the routine(s) we want from this binary to the shared RAM and then
