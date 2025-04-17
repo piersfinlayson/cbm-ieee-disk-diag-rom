@@ -137,10 +137,10 @@ CbmString StrStatusOk, "ok"
 
 CbmString StrStatusInternalError, "internal error"
 
-CbmString StrTest, "Test"
+CbmString StrTestDelim, " Test: "
 CbmString StrZeroPage, "Zero Page"
 CbmString StrRam, "RAM"
-CbmString Str6504, "6504"
+CbmString Str6504Space, "6504 "
 CbmString StrBoot, "Boot"
 CbmString StrTakeover, "Takeover"
 CbmString StrFailed, "Failed"
@@ -1452,8 +1452,9 @@ build_status_str:
     JSR setup_string_buf
 
     LDA DEVICE_STATUS       ; Get the status code
+    PHA                     ; Store it on the stack for later
+    LDX #$01                ; We want leading zeros on the number
     JSR output_decimal_byte ; Output it
-    PHA                 ; Store it on the stack for later
 
     LDA #$2C            ; Comma
     JSR add_char
@@ -1462,6 +1463,7 @@ build_status_str:
     PLA                 ; Get status code back
 
     LDX #$00            ; Store 00 as track number
+    STX STI
 
     CMP #DEVICE_STATUS_OK
     BEQ @status_ok
@@ -1470,11 +1472,13 @@ build_status_str:
     BEQ @status_booted
 
     ; Internal error
-    TAX                 ; Store error code in X
+    TAX                 ; Store status code in X (track number)
+    STX STI
     LDA #<StrStatusInternalError
     STA STR_PTR
     LDA #>StrStatusInternalError
     STA STR_PTR+1
+    .assert >StrStatusInternalError > 0, error, "StrStatusInternalError is 0 - branch won't work"
     BNE @add_status_string  ; We know #>StrStatusInternalError is not 0, so BNE
 
 @status_ok:
@@ -1482,6 +1486,7 @@ build_status_str:
     STA STR_PTR
     LDA #>StrStatusOk
     STA STR_PTR+1
+    .assert >StrStatusOk > 0, error, "StrStatusOk is 0 - branch won't work"
     BNE @add_status_string  ; We know #>StrStatusOk is not 0, so BNE
 
 @status_booted:
@@ -1495,9 +1500,11 @@ build_status_str:
     JSR add_version_number  ; Add version number as part of booted string
     BEQ @done               ; Exit if buffer full
 
-    LDX DEVICE_ID           ; Set track number to device numbe
+    LDX DEVICE_ID           ; Set track number to device number
+    STX STI                 ; Store it in the track number
 
-    LDA #$00                ; Now reset status to 00 (from 73)
+    LDA #$00                ; Now reset device status to 00 (from 73) as we've
+                            ; reported the 73 from boot.
     STA DEVICE_STATUS
     BEQ @add_suffix         ; We can use BEQ as A contains 0
 
@@ -1510,7 +1517,8 @@ build_status_str:
     JSR add_char
     BEQ @done               ; Exit if buffer full
 
-    TXA                     ; Put track number into A
+    LDA STI                 ; Reload track number
+    LDX #$01                ; We want leading zeros on the number
     JSR output_decimal_byte ; Output it
     BCS @done               ; Exit if buffer full
 
@@ -1519,6 +1527,7 @@ build_status_str:
     BEQ @done               ; Exit if buffer full
 
     LDA #$00                ; Sector number
+    LDX #$01                ; We want leading zeros on the number
     JSR output_decimal_byte ; Output it
 
 @done:
@@ -1570,11 +1579,13 @@ add_ram:
     RTS
 
 add_6504:
-    LDA #<Str6504
+    LDA #<Str6504Space
     STA STR_PTR
-    LDA #>Str6504
+    LDA #>Str6504Space
     STA STR_PTR+1
     JSR add_string_no_nl
+
+@done:
     RTS
 
 add_6504_boot:
@@ -1605,23 +1616,11 @@ add_6504_takeover:
 
 ; Add " Test: " to the string, for example to follow "Zero Page"
 add_test_suffix:
-    LDA #$20                ; Space
-    JSR add_char
-    BEQ @done               ; Exit if buffer full
-
-    LDA #<StrTest
+    LDA #<StrTestDelim
     STA STR_PTR
-    LDA #>StrTest
+    LDA #>StrTestDelim
     STA STR_PTR+1
     JSR add_string_no_nl
-    BEQ @done               ; Exit if buffer full
-
-    LDA #$3A                ; Colon
-    JSR add_char
-    BEQ @done               ; Exit if buffer full
-
-    LDA #$20                ; Space
-    JSR add_char
 
 @done:
     RTS
@@ -1841,10 +1840,10 @@ add_ram_result:
 ; Add results from 6504 tests
 add_6504_results:
     JSR add_6504_boot
-    BEQ @done               ; Exit if buffer full
+    BEQ @full               ; Exit if buffer full
 
     JSR add_test_suffix
-    BEQ @done               ; Exit if buffer full
+    BEQ @full               ; Exit if buffer full
 
     ; See if the 6504 boot test was attempted
     LDA #TEST_6504_BOOT
@@ -1852,7 +1851,7 @@ add_6504_results:
     BNE @boot_attempted
 
     JSR add_not_attempted
-    BEQ @done               ; Exit if buffer full
+    BEQ @full               ; Exit if buffer full
     BNE @check_takeover
 
     ; Attempted - see if it passed or failed
@@ -1862,14 +1861,25 @@ add_6504_results:
 
     ; Passed
     JSR add_passed
-    BEQ @done               ; Exit if buffer full
+    BEQ @full               ; Exit if buffer full
     BNE @check_takeover
 
 @boot_failed:
     JSR add_failed
-    BEQ @done               ; Exit if buffer full
+    BEQ @full               ; Exit if buffer full
 
 @check_takeover:
+    ; Newline
+    JSR add_newline
+    BEQ @full               ; Exit if buffer full
+
+    ; Add 6504 Takeover string
+    JSR add_6504_takeover
+    BEQ @full               ; Exit if buffer full
+
+    JSR add_test_suffix
+    BEQ @full               ; Exit if buffer full
+
     ; Now check the takeover test
     LDA #TEST_6504_TO
     AND TESTS_6502
@@ -1881,17 +1891,24 @@ add_6504_results:
 
     ; Passed
     JSR add_passed
+    BEQ @full               ; Exit if buffer full
 
-    ; Fall through to done
-@done:
+    ; Fall through to @complete
+@complete:
+    JSR add_newline
     RTS
 
 @takeover_failed:
     JSR add_failed
-    RTS
+    BEQ @full               ; Exit if buffer full
+    BNE @complete
 
 @takeover_not_attempted:
     JSR add_not_attempted
+    BEQ @full               ; Exit if buffer full
+    BNE @complete
+
+@full:
     RTS
 
 ; Routine to build detailed test results string
@@ -1943,6 +1960,7 @@ build_channel_listing_str:
     
     ; Add channel number
     LDA talk_str_table,X    ; Get channel number from table
+    LDX #$00                ; We don't want leading zeros on the number
     JSR output_decimal_byte
     BCS @done               ; Exit if buffer full (carry set)
     
@@ -1955,12 +1973,12 @@ build_channel_listing_str:
     BEQ @done
     
     ; Add channel description
+    LDX STI                 ; Restore X
     LDA talk_str_table+1,X  ; Get low byte of string pointer
     STA STR_PTR
     LDA talk_str_table+2,X  ; Get high byte of string pointer
     STA STR_PTR+1
     
-    STX STI                 ; Store X in STI zero page location
     LDX #$00                ; Add newline after this string
     JSR add_string
     BEQ @done               ; Buffer full check
@@ -2080,6 +2098,7 @@ add_underline:
 add_version_number:
     ; Handle MAJOR_VERSION
     LDA #MAJOR_VERSION      ; Load the immediate value
+    LDX #$00                ; No leading zeros
     JSR output_decimal_byte
     BCS @done               ; Exit if buffer full
     
@@ -2091,6 +2110,7 @@ add_version_number:
     
     ; Handle MINOR_VERSION  
     LDA #MINOR_VERSION      ; Load the immediate value
+    LDX #$00                ; No leading zeros
     JSR output_decimal_byte
     BCS @done               ; Exit if buffer full
     
@@ -2102,21 +2122,38 @@ add_version_number:
     
     ; Handle PATCH_VERSION
     LDA #PATCH_VERSION      ; Load the immediate value
+    LDX #$00                ; No leading zeros
     JSR output_decimal_byte
     
 @done:
     RTS
 
 ; Convert byte in A (0-99) to decimal ASCII and store at (BUF_PTR),Y
+; X determines if values 0-9 should have leading zeros (0=no, non-zero=yes)
 ; Advances Y for each digit output
 ; Returns with carry set if buffer full (Y wrapped to 0)
 output_decimal_byte:
-    PHA             ; Save A on stack
+    STA STJ
 
     ; Check if value >= 10
     CMP #10
-    BCC @single_digit  ; If < 10, skip tens digit
+    BCS @two_digits     ; If >= 10, handle two digits
+
+    ; It's a single digit (0-9)
+    CPX #0              ; Test if we want leading zeros
+    BEQ @single_digit   ; If X=0, no leading zero needed
     
+    ; Output leading zero for single-digit numbers
+    LDA #$30            ; ASCII '0'
+    STA (BUF_PTR),Y
+    INY
+    BEQ @buffer_full
+    
+@single_digit:
+    LDA STJ
+    JMP @output_digit
+    
+@two_digits:
     ; Divide by 10 using repeated subtraction
     LDX #0          ; X will hold the tens digit
 @div_loop:
@@ -2134,33 +2171,23 @@ output_decimal_byte:
     CLC
     ADC #$30        ; Convert to ASCII
     STA (BUF_PTR),Y
+    PLA             ; Get ones digit back to clean up stack
     INY
-    BEQ @buffer_full_with_stack
+    BEQ @buffer_full
     
-    ; Output ones digit
-    PLA
-    JMP @output_digit
-    
-@buffer_full_with_stack:
-    PLA             ; Clean up stack before returning
-    SEC             ; Set carry to indicate buffer is full
-    BCS @done
-
-@single_digit:
 @output_digit:
     CLC
     ADC #$30        ; Convert to ASCII
     STA (BUF_PTR),Y
     INY
     BEQ @buffer_full
+    LDA STJ         ; Restore original A
     CLC             ; Clear carry to indicate success
-    BCC @done
+    RTS
     
 @buffer_full:
+    LDA STJ         ; Restore original A
     SEC             ; Set carry to indicate buffer is full
-
-@done:
-    PLA
     RTS
 
 ; Initialise the IEEE-488 ports and computes device ID
@@ -2434,9 +2461,9 @@ listen_handler:
 ; Handle outgoing data as talker  
 talk_handler:
     LDA IEEE_SEC_ADDR       ; Check which channel
-    CMP #$0F                ; Command channel?
-    BEQ @cmd_talk           ; Handle command channel
-    ; Other channels not implemented
+    CMP #$10                ; Channels 0-15?
+    BCC @cmd_talk           ; Handle command channel
+    ; Channels > 15 not supported
     RTS
 
 @cmd_talk:

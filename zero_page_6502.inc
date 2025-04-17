@@ -99,6 +99,7 @@ STI = $12 + ZP_OFFSET   ; string handling - temporary value
 BUF_INDEX = $13 + ZP_OFFSET ; string handling - temporary value
 STR_INDEX = $14 + ZP_OFFSET ; string handling - temporary value
 STR_LEN = $15 + ZP_OFFSET   ; string handling - temporary value
+STJ = $16 + ZP_OFFSET   ; string handling - temporary value
 
 ; Zero page values used by routines adding test results strings.
 ; They are used by
