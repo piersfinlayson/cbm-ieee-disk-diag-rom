@@ -6,7 +6,7 @@ Got a question?  See the [FAQ](./FAQ.md).
 
 ## 📖Overview
 
-This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, and 4040). It performs memory and other tests and provides visual feedback through the drive's LEDs.
+This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, and 4040). It performs memory and other tests and provides visual feedback through the drive's LEDs and, if functional, via the IEEE-488 port.
 
 ## ✨Features
 
@@ -15,6 +15,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - 🔍 Identifies precisely which static RAM chip(s) have failed
 - 💡 Visual status indication and failed components via drive LEDs
 - 🆔 Detects and reports the configured hardware device ID (8, 9, etc)
+- 🔌 Reports diagnostic results via IEEE-488 if operational. 
 - 🖥️ Tests presence and functioning of secondary CPU, 6504
 - 🔀 Can be run as replacememnt for main ROM or alongside stock DOS 1 ROMs
 
@@ -24,6 +25,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - [💡LED Indicators](#led-indicators)
 - [📋Detailed Test Information](#detailed-test-information)
 - [📊Detailed Result Information](#detailed-result-information)
+- [🔌Reporting via IEEE-488](#reporting-via-ieee-488)
 - [🔨Building From Source](#building-from-source)
 - [🤓Fun Facts](#fun-facts)
 - [📐Schematics and PCB Layouts](#schematics-and-pcb-layouts)
@@ -242,6 +244,61 @@ It may also be a problem with the shared data bus.  As the data bus is shared be
 
 With the ERR LED off, the number of flashes, before pausing, indicates the hardware configured device ID of this drive (8-15)
 
+## 🔌Reporting via IEEE-488
+
+Once the diagnostics tests have been run, and flash codes are being used to [report diagnostics results](#detailed-result-information), the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controlled via the hardware configured hardware ID, which is [reported via flash codes](#reporting-device-id).
+
+The drive can be instructed to provide its configured information by settig it to talk on the appropriate channel.
+
+An explanation of the various types of information follows.  While [📟 Last Operation Status](#last-operation-status) and [📋Channel Listing](#channel-listing) are available on the specified channels, information on other channels may vary depending on the ROM version.  Use the [📋Channel Listing](#channel-listing) to see what is available on each channel.
+
+### 📟Last Operation Status
+
+This is exposed on channel 15, and returns a status string like a stock Commodore disk drive.  The first time this is queried after the IEEE-488 has been initialized, a 73 error code will be reported, just like a newly booted stock Commodore disk drive.
+
+To query this status on your PET (or C64 with IEEE-488 support), use the following program (you do not need to the REM statements).
+
+```basic
+1 REM OPENS CHANNEL 15 USING TALK
+2 REM RECEIVES LAST OPERATION STATUS
+3 REM READS UNTIL CARRIAGE RETURN
+4 REM PRINTS AND EXITS
+10 OPEN 1,8,15
+20 INPUT#1,EN,EM$,ET,ES
+30 PRINT EN;EM$;ET;ES
+40 CLOSE 1
+```
+
+### 📋Channel Listing
+
+When instructed to talk on channel 0, the drive will return a list of information available on specific channels.
+
+A sample program to retrieve this information is provided here (you do not need the REM statements).
+
+```basic
+1 REM OPENS CHANNEL 0 USING TALK
+2 REM READS CHANNEL LISTING DATA
+3 REM READS UNTIL EOF IS REACHED
+4 REM CONVERTS DATA CONVERTED TO ASCII
+5 REM PRINTS IT AND EXITS 
+10 OPEN 1,8,0
+20 GET#1,A$
+30 IF ST AND 64 THEN 60
+40 PRINT ASC(A$+CHR$(0));
+50 GOTO 20
+60 CLOSE 1
+```
+
+This program can be used with a different channel number - change ```0``` to the appropriate number on line ```10```,
+
+### 🚥Diagnostic Summary
+
+A one-line summary of whether the drive passed all tests, or not.
+
+### 📊Detailed Diagnostics Results
+
+Detailed diagnostics results are reported 
+
 ## 🔨Building From Source
 
 ### 📋Requirements
@@ -310,9 +367,9 @@ See [❓FAQ](./FAQ.md) for a list of frequently asked questions.
 
 This section lists some potential future enhancements:
 
-📡 Ability to send diagnostics information via IEEE-488 port.  Could potentially support two modes:
-- If only UE1 present and working, implement a serial protocol over the IEEE-488 lines available on the UE1.
-- If both UE1 and UC1 present and working, communicate using IEEE-488 stock protocol.  
+🔌 Explicitly test each IEEE-488 line prior to enabling IEEE-488 support.
+
+📡 Ability to send diagnostics information via IEEE-488 port using a serial protocol and just lines available on UE1 - to get around issues with UC1.
 
 🧠 Additional 6504 and supporting component tests.
 
