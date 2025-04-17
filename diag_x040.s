@@ -81,7 +81,8 @@ INTRO_STR_TABLE_LEN = (INTO_STR_TABLE_END - intro_str_table)
 ; Channel names
 CbmString StrChannelListing, "Channel list"
 CbmString StrRomInfo, "ROM info"
-CbmString StrResultsSummary, "Test result summary"
+CbmString StrTestResults, "Test results"
+CbmString StrTestSummary, "Test summary"
 CbmString StrStatus, "Drive status"
 
 ; Channel string
@@ -96,11 +97,14 @@ talk_str_table:
     .word StrChannelListing
     .word build_channel_listing_str
     .byte 1                         ; Channel num
+    .word StrTestSummary
+    .word build_summary_str
+    .byte 2                         ; Channel num
     .word StrRomInfo
     .word build_rom_info_str
-    .byte 2                         ; Channel num
-    .word StrResultsSummary
-    .word build_test_results_summary_str
+    .byte 3                         ; Channel num
+    .word StrTestResults
+    .word build_test_results_str
     .byte 15                        ; Channel num
     .word StrStatus
     .word build_status_str
@@ -109,15 +113,53 @@ TALK_STR_TABLE_LEN = (TALK_STR_TABLE_END - talk_str_table)
 CbmString StrInvalidChannel, "Invalid channel"
 
 ; String to use in status response indicating failed tests
-CbmString StrTestsFailed, "Failed tests(s)"
+CbmString StrTestsFailed, "Tests(s) failed"
 END_STR_TESTS_FAILED:
-.assert (END_STR_TESTS_FAILED - StrTestsFailed) <= 16, error, "StrTestsFailed too long"
+.assert (END_STR_TESTS_FAILED - StrTestsFailed) <= 29, error, "StrTestsFailed too long"
 ; String to use in status response indicating passed tests
 CbmString StrTestsPassed, "All tests passed"
 END_STR_TESTS_PASSED:
-.assert (END_STR_TESTS_PASSED - StrTestsPassed) <= 16, error, "StrTestsPassed too long"
+.assert (END_STR_TESTS_PASSED - StrTestsPassed) <= 29, error, "StrTestsPassed too long"
 
 CbmString StrNotImplemented, "Not implemented"
+
+; Boot string, provided alongside status code 73.  Our equivalent of:
+; "CBM DOS V2.6 1541"
+;
+; We use a max length of 22 bytes, in order to give us 8 bytes for the version
+; number, and still hit 39 bytes for the entire status string including
+; preceeding error code and command, and succeeding commas and track/sector
+; numbers
+CbmString StrStatusBooted, "piers.rocks diag rom v"
+END_STR_BOOT:
+.assert (END_STR_BOOT - StrStatusBooted) <= 22, error, "StrBoot too long"
+
+CbmString StrStatusOk, "ok"
+
+CbmString StrStatusInternalError, "internal error"
+
+CbmString StrTest, "Test"
+CbmString StrZeroPage, "Zero Page"
+CbmString StrRam, "RAM"
+CbmString Str6504, "6504"
+CbmString StrBoot, "Boot"
+CbmString StrTakeover, "Takeover"
+CbmString StrFailed, "Failed"
+CbmString StrPassed, "Passed"
+CbmString StrNotAttempted, "Not Attempted"
+
+; Names of the various RAM chips.
+; 'U' isn't included to simplify handling code
+; Ordered from LSB and RESULT_RAM_TEST upwards
+RamChipNames:
+    .byte 'C', '5'
+    .byte 'D', '5'
+    .byte 'E', '5'
+    .byte 'F', '5'
+    .byte 'C', '4'
+    .byte 'D', '4'
+    .byte 'E', '4'
+    .byte 'F', '4'
 
 ; Pages to test in our first RAM test
 RamTest0:
@@ -1260,6 +1302,11 @@ clear_6504_result:
 
     RTS
 
+add_string_no_nl:
+    LDX #$01                ; Initialize string index
+    JSR add_string
+    RTS
+
 ; Add a string to the provided buffer
 ;
 ; X = zero if need to add newline, non-zero if we don't
@@ -1334,7 +1381,7 @@ build_invalid_channel_str:
     LDA #>StrInvalidChannel
     STA STR_PTR+1
 
-    JSR add_string
+    JSR add_string_no_nl
     RTS
 
 ; Figures out if any of the tests failed, by comparing the various zero page
@@ -1362,75 +1409,450 @@ add_char:
     STA (BUF_PTR),Y
     INY
 
-; Build a status string.  This is what we transmit when instructed to talk on
-; channel 15.  We output a string in the same format as a standard Commodore
-; disk drive would:
-;
-;   <status code>,<status string>,<track number>,<sector number>
-build_status_str:
-    LDX #$00
+; Build a test summary string.  Simply says whether all tests passed or some
+; some test(s) failed.
+build_summary_str:
     JSR setup_string_buf
-    BEQ @status_ok
+    JSR test_failed_any
+    BEQ @ok
 
-    LDX #74             ; Use "DRIVE NOT READY" to indicate failed test(s)
-
-@status_ok:
-    TXA                 ; Put code in A - used by output_decimal_byte
-    PHA                 ; Store it on the stack for later
-    JSR output_decimal_byte
-    BCS @done           ; Exit if buffer full
-
-    LDA #$2C            ; Comma
-    JSR add_char
-    BEQ @done           ; Exit if buffer full
-    
-    PLA                 ; Get status code back
-    BEQ @status_ok_str
-
+    ; Test(s) failed case
     LDA #<StrTestsFailed
     STA STR_PTR
     LDA #>StrTestsFailed
     STA STR_PTR+1
-    JMP @add_string
+    BNE @add_string         ; BNE as we know #>StrTestsFailed != 0
 
-@status_ok_str:
+@ok:
+    ; All tests passed
     LDA #<StrTestsPassed
     STA STR_PTR
     LDA #>StrTestsPassed
     STA STR_PTR+1
 
 @add_string:
-    JSR add_string
-    BEQ @done           ; Exit if buffer full
+    JSR add_string_no_nl
+    RTS
+
+; Build a status string.  This is what we transmit when instructed to talk on
+; channel 15.  And provides the result of the last operation we performed in
+; response to a requested action by the user.
+;
+; We output a string in the same format as a standard Commodore disk drive
+; would:
+;
+;   <status code>,<status string>,<track number>,<sector number>
+;
+; Max of 39 bytes long for compatibility with stock disk drives.
+;
+; When reporting booted status (73) track number contains device ID (8-15).
+build_status_str:
+    JSR setup_string_buf
+
+    LDA DEVICE_STATUS       ; Get the status code
+    JSR output_decimal_byte ; Output it
+    PHA                 ; Store it on the stack for later
 
     LDA #$2C            ; Comma
     JSR add_char
     BEQ @done           ; Exit if buffer full
 
-    LDA #$30            ; Zero
-    JSR add_char
-    BEQ @done           ; Exit if buffer full
+    PLA                 ; Get status code back
 
-    LDA #$2C            ; Comma
-    JSR add_char
-    BEQ @done           ; Exit if buffer full
+    LDX #$00            ; Store 00 as track number
 
-    LDA #$30            ; Zero
+    CMP #DEVICE_STATUS_OK
+    BEQ @status_ok
+
+    CMP #DEVICE_STATUS_BOOTED
+    BEQ @status_booted
+
+    ; Internal error
+    TAX                 ; Store error code in X
+    LDA #<StrStatusInternalError
+    STA STR_PTR
+    LDA #>StrStatusInternalError
+    STA STR_PTR+1
+    BNE @add_status_string  ; We know #>StrStatusInternalError is not 0, so BNE
+
+@status_ok:
+    LDA #<StrStatusOk
+    STA STR_PTR
+    LDA #>StrStatusOk
+    STA STR_PTR+1
+    BNE @add_status_string  ; We know #>StrStatusOk is not 0, so BNE
+
+@status_booted:
+    LDA #<StrStatusBooted
+    STA STR_PTR
+    LDA #>StrStatusBooted
+    STA STR_PTR+1
+    JSR add_string_no_nl    ; Add it now
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_version_number  ; Add version number as part of booted string
+    BEQ @done               ; Exit if buffer full
+
+    LDX DEVICE_ID           ; Set track number to device numbe
+
+    LDA #$00                ; Now reset status to 00 (from 73)
+    STA DEVICE_STATUS
+    BEQ @add_suffix         ; We can use BEQ as A contains 0
+
+@add_status_string:
+    JSR add_string_no_nl
+    BEQ @done               ; Exit if buffer full
+
+@add_suffix:
+    LDA #$2C                ; Comma
     JSR add_char
-    BEQ @done           ; Exit if buffer full
+    BEQ @done               ; Exit if buffer full
+
+    TXA                     ; Put track number into A
+    JSR output_decimal_byte ; Output it
+    BCS @done               ; Exit if buffer full
+
+    LDA #$2C                ; Comma
+    JSR add_char
+    BEQ @done               ; Exit if buffer full
+
+    LDA #$00                ; Sector number
+    JSR output_decimal_byte ; Output it
 
 @done:
     RTS
 
-build_test_results_summary_str:
+; Add "Passed" string
+add_passed:
+    LDA #<StrPassed
+    STA STR_PTR
+    LDA #>StrPassed
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    RTS
+
+; Add "Failed" string
+add_failed:
+    LDA #<StrFailed
+    STA STR_PTR
+    LDA #>StrFailed
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    RTS
+
+; Add "Not Attempted" string
+add_not_attempted:
+    LDA #<StrNotAttempted
+    STA STR_PTR
+    LDA #>StrNotAttempted
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    RTS
+
+; Add zero page string
+add_zero_page:
+    LDA #<StrZeroPage
+    STA STR_PTR
+    LDA #>StrZeroPage
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    RTS
+
+add_ram:
+    LDA #<StrRam
+    STA STR_PTR
+    LDA #>StrRam
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    RTS
+
+add_6504:
+    LDA #<Str6504
+    STA STR_PTR
+    LDA #>Str6504
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    RTS
+
+add_6504_boot:
+    JSR add_6504
+    BEQ @done               ; Exit if buffer full
+
+    LDA #<StrBoot
+    STA STR_PTR
+    LDA #>StrBoot
+    STA STR_PTR+1
+    JSR add_string_no_nl
+
+@done:
+    RTS
+
+add_6504_takeover:
+    JSR add_6504
+    BEQ @done               ; Exit if buffer full
+
+    LDA #<StrTakeover
+    STA STR_PTR
+    LDA #>StrTakeover
+    STA STR_PTR+1
+    JSR add_string_no_nl
+
+@done:
+    RTS
+
+; Add " Test: " to the string, for example to follow "Zero Page"
+add_test_suffix:
+    LDA #$20                ; Space
+    JSR add_char
+    BEQ @done               ; Exit if buffer full
+
+    LDA #<StrTest
+    STA STR_PTR
+    LDA #>StrTest
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    BEQ @done               ; Exit if buffer full
+
+    LDA #$3A                ; Colon
+    JSR add_char
+    BEQ @done               ; Exit if buffer full
+
+    LDA #$20                ; Space
+    JSR add_char
+
+@done:
+    RTS
+
+add_zero_page_result:
+    JSR add_zero_page
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_test_suffix
+    BEQ @done               ; Exit if buffer full
+
+    ; See if the zero page test was attempted
+    LDA #TEST_ZP
+    AND TESTS_6502
+    BEQ @zp_not_attempted
+
+    ; Attempted - see if it passed or failed
+    LDA RESULT_ZP
+    BNE @zp_failed
+
+    ; Passed
+    JSR add_passed
+@done:
+    RTS
+
+@zp_failed:
+    JSR add_failed
+    RTS
+
+@zp_not_attempted:
+    JSR add_not_attempted
+    RTS
+
+; Adds " - " to the string
+add_dash_and_spaces:
+    LDA #$20                ; space
+    JSR add_char
+    BEQ @done               ; Exit if buffer full
+
+    LDA #$2D                ; dash
+    JSR add_char
+    BEQ @done               ; Exit if buffer full
+
+    LDA #$20                ; space
+    JSR add_char
+
+@done:
+    RTS
+
+add_comma_space:
+    LDA #$2C                ; Comma
+    JSR add_char
+    BEQ @done               ; Exit if buffer full
+
+    LDA #$20                ; Space
+    JSR add_char
+
+@done:
+    RTS
+
+add_failed_ram_chips:
+    JSR add_dash_and_spaces
+    BEQ @done               ; Exit if buffer full
+
+    ; Now log any failed RAM chips
+    ; We do this by processing RESULT_RAM_TEST.  A '1' in a bit indicates a
+    ; failed chip.  We use (2 x bit number) to access RamChipNames
+    LDA RESULT_RAM_TEST         ; Load the RAM test result
+    STA NRTR                    ; Store for processing
+    LDX #$00                    ; X will be our bit counter (0-7)
+    TXA                         ; A will track if we've output any chips yet
+    STA NROC                    ; Store in zero page
+
+@chip_loop:
+    LSR NRTR                    ; Shift right to check current bit
+    BCC @next_bit               ; Skip if this bit is not set (no failure)
+
+    ; This chip failed - output its name
+    LDA NROC                    ; Check if we've output any chips yet
+    BEQ @first_chip             ; Skip comma for first chip
+
+    JSR add_comma_space
+    BEQ @done                   ; Exit if buffer full
+
+@first_chip:
+    INC NROC                    ; Mark that we've output at least one chip
+
+    ; Output the 'U' at the beginning of the name
+    LDA #$55                    ; 'U' character
+    JSR add_char
+    BEQ @done                   ; Exit if buffer full
+
+    ; Get the chip name from RamChipNames
+    TXA                         ; Put bit number in A
+    ASL A                       ; Multiply by 2 for RamChipNames indexing
+    TAY                         ; Use as index
+    
+    ; Output first character of chip name
+    LDA RamChipNames,Y          ; Get the letter (C, D, E, F)
+    JSR add_char
+    BEQ @done                   ; Exit if buffer full
+    
+    ; Output second character of chip name
+    LDA RamChipNames+1,Y        ; Get the number (4 or 5)
+    JSR add_char
+    BEQ @done                   ; Exit if buffer full
+
+@next_bit:
+    INX                         ; Move to next bit
+    CPX #$08                    ; Check if we've done all 8 bits
+    BCC @chip_loop              ; Continue if X < 8
+
+    LDA #$01                    ; Set A to 1 to show buffer not full
+
+@done:
+    RTS
+
+; Add RAM test result
+add_ram_result:
+    JSR add_ram
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_test_suffix
+    BEQ @done               ; Exit if buffer full
+
+    ; See if the RAM test was attempted
+    LDA #(TEST_RAM0 | TEST_RAM1)
+    AND TESTS_6502
+    BEQ @ram_not_attempted
+
+    ; Attempted - see if it passed or failed
+    LDA RESULT_RAM_TEST
+    BNE @ram_failed
+
+    ; Passed
+    JSR add_passed
+@done:
+    RTS
+
+@ram_failed:
+    JSR add_failed
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_failed_ram_chips
+    RTS
+
+@ram_not_attempted:
+    JSR add_not_attempted
+    RTS
+
+add_6504_results:
+    JSR add_6504_boot
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_test_suffix
+    BEQ @done               ; Exit if buffer full
+
+    ; See if the 6504 boot test was attempted
+    LDA #TEST_6504_BOOT
+    AND TESTS_6502
+    BNE @boot_attempted
+
+    JSR add_not_attempted
+    BEQ @done               ; Exit if buffer full
+    BNE @check_takeover
+
+    ; Attempted - see if it passed or failed
+@boot_attempted:
+    LDA RESULT_6504_BOOT
+    BNE @boot_failed
+
+    ; Passed
+    JSR add_passed
+    BEQ @done               ; Exit if buffer full
+    BNE @check_takeover
+
+@boot_failed:
+    JSR add_failed
+    BEQ @done               ; Exit if buffer full
+
+@check_takeover:
+    ; Now check the takeover test
+    LDA #TEST_6504_TO
+    AND TESTS_6502
+    BEQ @takeover_not_attempted
+
+    ; Attempted - see if it passed or failed
+    LDA RESULT_6504_TO
+    BNE @takeover_failed
+
+    ; Passed
+    JSR add_passed
+
+    ; Fall through to done
+@done:
+    RTS
+
+@takeover_failed:
+    JSR add_failed
+    RTS
+
+@takeover_not_attempted:
+    JSR add_not_attempted
+    RTS
+
+
+; Routine to build detailed test results string
+;
+; Contains:
+; - Zero page results
+; - RAM test results (combined across both tests)
+; - 6504 results (both boot and takeover)
+;
+; For each set of results, it indicates either that the test wasn't attempted,
+; or the results of the test.
+build_test_results_str:
     JSR setup_string_buf
 
-    LDA #<StrNotImplemented
-    STA STR_PTR
-    LDA #>StrNotImplemented
-    STA STR_PTR+1
-    JSR add_string
+    JSR add_zero_page_result
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_newline
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_ram_result
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_newline
+    BEQ @done               ; Exit if buffer full
+
+    JSR add_6504_results
+@done:
     RTS
+
 
 ; Build a string listing all available channels and their purposes.
 ; Format: "Channel X: Description" for each channel
@@ -1446,8 +1868,7 @@ build_channel_listing_str:
     STA STR_PTR+1
     
     STX STI                 ; Store X in STI zero page location
-    LDX #$01                ; Don't add newline (X != 0)
-    JSR add_string
+    JSR add_string_no_nl
     BEQ @done               ; Buffer full check
     LDX STI                 ; Restore X
     
@@ -1614,6 +2035,8 @@ add_version_number:
 ; Advances Y for each digit output
 ; Returns with carry set if buffer full (Y wrapped to 0)
 output_decimal_byte:
+    PHA             ; Save A on stack
+
     ; Check if value >= 10
     CMP #10
     BCC @single_digit  ; If < 10, skip tens digit
@@ -1645,7 +2068,7 @@ output_decimal_byte:
 @buffer_full_with_stack:
     PLA             ; Clean up stack before returning
     SEC             ; Set carry to indicate buffer is full
-    RTS
+    BCS @done
 
 @single_digit:
 @output_digit:
@@ -1655,16 +2078,23 @@ output_decimal_byte:
     INY
     BEQ @buffer_full
     CLC             ; Clear carry to indicate success
-    RTS
+    BCC @done
     
 @buffer_full:
     SEC             ; Set carry to indicate buffer is full
+
+@done:
+    PLA
     RTS
 
 ; Initialise the IEEE-488 ports and computes device ID
 ;
 ; Destroys A
 ieee_init:
+    ; Initialize drive status to 73 (just booted)
+    LDA #DEVICE_STATUS_BOOTED
+    STA DEVICE_STATUS
+
     ; Initialize ports
 
     ; Start with the DIO lines

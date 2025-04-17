@@ -254,7 +254,9 @@ An explanation of the various types of information follows.  While [📟 Last Op
 
 ### 📟Last Operation Status
 
-This is exposed on channel 15, and returns a status string like a stock Commodore disk drive.  The first time this is queried after the IEEE-488 has been initialized, a 73 error code will be reported, just like a newly booted stock Commodore disk drive.
+This is exposed on channel 15, and returns a status string like a stock Commodore disk drive.  The first time this is queried after the IEEE-488 has been initialized, a 73 error code will be reported, just like a newly booted stock Commodore disk drive.  Subsequently this will return either 00 (OK) or some other result based on the last operation the ROM performed in response to a user request.
+
+Such requests aren't supported as of ROM version 0.1.5, hence you should expect 00,OK,00,00 after the intial 73 response.
 
 To query this status on your PET (or C64 with IEEE-488 support), use the following program (you do not need to the REM statements).
 

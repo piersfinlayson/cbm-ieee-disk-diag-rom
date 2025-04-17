@@ -96,9 +96,13 @@ CTA = $11 + ZP_OFFSET   ; check_takover - temporary A
 
 ; String routines
 STI = $12 + ZP_OFFSET   ; string handling - temporary value
-BUF_INDEX = $13 + ZP_OFFSET   ; string handling - temporary value
-STR_INDEX = $14 + ZP_OFFSET   ; string handling - temporary value
+BUF_INDEX = $13 + ZP_OFFSET ; string handling - temporary value
+STR_INDEX = $14 + ZP_OFFSET ; string handling - temporary value
 STR_LEN = $15 + ZP_OFFSET   ; string handling - temporary value
+
+; RAM notification zero page values
+NROC = TEMP_A               ; add_ram_result - whether we've output any chips
+NRTR = TEMP_B               ; add_ram_result - ram test result for processing
 
 BUF_PTR = TEMP_PTR1
 STR_PTR = TEMP_PTR2
@@ -116,10 +120,8 @@ RESULT_ZP = $21 + ZP_OFFSET
 ; Stores device ID (8-15).  If 0, the device ID has not been read.
 DEVICE_ID = $22 + ZP_OFFSET
 
-; Bits 1/0 cover upper/lower nibble of $1000-$13FF - 0 success, 1 failure
-; Bits 3/2 cover $2000-$23FF - 0 success, 1 failure
-; Bits 5/4 cover $3000-$33FF - 0 success, 1 failure
-; Bits 7/6 cover $4000-$43FF - 0 success, 1 failure
+; Bits 0-3 cover the lower nibble of the page number ($1x-$4x)
+; Bits 4-7 cover the upper nibble of the page number ($10-$43)
 RESULT_RAM_TEST = $23 + ZP_OFFSET
 
 ; Used to store test results from check_6504_booted.
@@ -134,7 +136,12 @@ RESULT_6504_TO = $25 + ZP_OFFSET
 RESULT_DRIVE0 = $26 + ZP_OFFSET
 RESULT_DRIVE1 = $27 + ZP_OFFSET
 
-; Reserved for future use: $28-$2D
+; Used to store last operation status from the device, similar to how a stock
+; Commodore disk drive does.  This is transmitted when channel 15 is put into
+; talk.
+DEVICE_STATUS = $28 + ZP_OFFSET
+
+; Reserved for future use: $29-$2D
 
 ; Used to dynamically change the interrupt handler - must be set before
 ; enabling interrupts

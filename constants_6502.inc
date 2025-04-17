@@ -71,3 +71,8 @@ TEST_DRIVE_WAIT_TIME = $1E  ; 30 seconds
 
 ; Last byte to be sent after the diagnostic status
 IEEE_DIAG_TERM = $00
+
+; Device status codes, returned on channel 15 like a stock drive
+DEVICE_STATUS_BOOTED = 73
+DEVICE_STATUS_OK = 0
+DEVICE_STATUS_INTERNAL_ERROR = 99
