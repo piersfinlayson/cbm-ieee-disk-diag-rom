@@ -1646,6 +1646,9 @@ add_zero_page_result:
 
 @zp_failed:
     JSR add_failed
+
+    ; Now we add which zero page locations failed.
+    JSR add_failed_zp_chips
     RTS
 
 @zp_not_attempted:
@@ -1675,6 +1678,63 @@ add_comma_space:
 
     LDA #$20                ; Space
     JSR add_char
+
+@done:
+    RTS
+
+; RESULT_ZP contains 1 in bit 0 for UE1 and a 1 in bit 1 for UC1.
+add_failed_zp_chips:
+    JSR add_dash_and_spaces
+    BEQ @done               ; Exit if buffer full
+
+    LDA RESULT_ZP           ; Load the zero page test result
+    STA NRTR                ; Store for processing
+    LDX #$00                ; X will be our bit counter (0-1)
+    TXA                     ; A will track if we've output any chips yet
+    STA NROC                ; Store in zero page
+
+@chip_loop:
+    LSR NRTR                ; Shift right to check current bit
+    BCC @next_bit           ; Skip if this bit is not set (no failure)
+
+    ; This chip failed - output its name
+    LDA NROC                ; Check if we've output any chips yet
+    BEQ @first_chip         ; Skip comma for first chip
+
+    JSR add_comma_space
+    BEQ @done               ; Exit if buffer full
+
+@first_chip:
+    INC NROC                    ; Mark that we've output at least one chip
+
+    ; Output the 'U' at the beginning of the name
+    LDA #$55                    ; 'U' character
+    JSR add_char
+    BEQ @done                   ; Exit if buffer full
+
+    CPX #$00                    ; Check if this is the first result bit
+    BNE @uc1                    ; If not, skip to UC1
+
+    LDA #$45                    ; 'E' character
+    BNE @continue               ; A is non zero so always branches
+
+@uc1:
+    LDA #$43                    ; 'C' character
+
+@continue:
+    JSR add_char
+    BEQ @done                   ; Exit if buffer full
+
+    LDA #$31                    ; '1' character
+    JSR add_char
+    BEQ @done                   ; Exit if buffer full
+
+@next_bit:
+    INX                         ; Move to next bit
+    CPX #$02                    ; Check if we've done all 2 bits
+    BCC @chip_loop              ; Continue if X < 2
+
+    LDA #$01                    ; Set A to 1 to show buffer not full
 
 @done:
     RTS
@@ -1769,6 +1829,7 @@ add_ram_result:
     JSR add_not_attempted
     RTS
 
+; Add results from 6504 tests
 add_6504_results:
     JSR add_6504_boot
     BEQ @done               ; Exit if buffer full
@@ -1824,7 +1885,6 @@ add_6504_results:
     JSR add_not_attempted
     RTS
 
-
 ; Routine to build detailed test results string
 ;
 ; Contains:
@@ -1852,7 +1912,6 @@ build_test_results_str:
     JSR add_6504_results
 @done:
     RTS
-
 
 ; Build a string listing all available channels and their purposes.
 ; Format: "Channel X: Description" for each channel

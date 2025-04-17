@@ -100,9 +100,12 @@ BUF_INDEX = $13 + ZP_OFFSET ; string handling - temporary value
 STR_INDEX = $14 + ZP_OFFSET ; string handling - temporary value
 STR_LEN = $15 + ZP_OFFSET   ; string handling - temporary value
 
-; RAM notification zero page values
-NROC = TEMP_A               ; add_ram_result - whether we've output any chips
-NRTR = TEMP_B               ; add_ram_result - ram test result for processing
+; Zero page values used by routines adding test results strings.
+; They are used by
+; - add_failed_ram_chips
+; - add_failed_zp_chips
+NROC = TEMP_A               ; whether we've output any chips
+NRTR = TEMP_B               ; ram test result for processing
 
 BUF_PTR = TEMP_PTR1
 STR_PTR = TEMP_PTR2
