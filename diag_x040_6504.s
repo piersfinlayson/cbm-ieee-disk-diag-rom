@@ -11,9 +11,6 @@
 CPU_6504 = 1
 .include "shared.inc"
 
-; Reset vector in 6504 $FC00 ROM
-RESET = $FFFC
-
 ; Locations of registers
 VIA_PBD = $40
 VIA_PBDD = $42
@@ -54,136 +51,20 @@ control:
 
     ; Check whether CMD1 is set to a valid command
     LDA CMD1
-.ifdef TEST_DRIVE    
-    CMP #CMD_TEST_DRIVE
-    BEQ @test_drive_check
-.endif
+    .assert CMD_NONE = 0, error, "CMD_NONE must be 0 for branching to work correctly"
+    BEQ @main_loop          ; Loop around again
+
+    ; CMD1 isn't CMD_NONE.  Now check it matches CMD2
+    CMP CMD2
+    AND #$DF                ; Force to uppercase
+    BNE @main_loop          ; If not, loop back and check CMD1 again
+
+    ; CMD1 and CMD2 match.  Now check if it's a valid command
+    AND #$DF                ; Force to uppercase
     CMP #CMD_RESET
-    BEQ @reset_check
-    BNE @main_loop          ; If not, loop back and check again
+    BEQ @reset
 
-.ifdef TEST_DRIVE    
-; Test drive
-@test_drive_check:
-    ; Check if CMD2 is also set to run
-    LDA CMD2
-    CMP #CMD_TEST_DRIVE
-    BNE @main_loop          ; If not, loop back and check again
-
-    ; Run the drive test
-    JSR test_drive          ; Jump to the test drive routine
-
-    ; Done, jump back to main loop
-    JMP @main_loop
-.endif
-
-; Reset command
-@reset_check:
-    ; check if CMD2 also set to run
-    LDA CMD2
-    CMP #CMD_RESET
-    BNE @main_loop          ; If not, loop back and check again
-
-    ; Run the reset command
-    JMP reset
-
-reset:
+@reset:
     LDA #STATUS_6504_RESETTING   ; Set status to resetting
     STA STATUS_6504
     JMP (RESET)
-
-.ifdef TEST_DRIVE
-test_drive:
-    ; Load command variable (drive number) before anything else in case it
-    ; gets changed by 6502 shortly
-    LDY CMD_VAR
-    STY ZP_DRIVE
-
-    ; Set status
-    LDA #STATUS_6504_TESTING_DRIVE  ; Set status to testing drive
-    STA STATUS_6504
-
-    ; Turn on drive motor for this drive - 1 is off, 0 on.  As we turned it
-    ; off when starting up, we just need to toggle it now.
-    LDA VIA_PBD
-    LDY #$01
-    EOR motor_bits,Y         ; Toggle it
-    STA VIA_PBD
-    LDX #$80
-    JSR delay
-
-    LDY #$01
-    EOR motor_bits,Y         ; Toggle it
-    STA VIA_PBD
-    LDX #$80
-    JSR delay
-
-    LDY #$01
-    EOR motor_bits,Y         ; Toggle it
-    STA VIA_PBD
-    LDX #$80
-    JSR delay
-
-    LDY #$01
-    EOR motor_bits,Y         ; Toggle it
-    STA VIA_PBD
-    LDX #$80
-    JSR delay
-
-    ; Wait for a second
-    LDX #$00
-    JSR delay
-    LDX #$00
-    JSR delay
-    LDX #$00
-    JSR delay
-    LDX #$00
-    JSR delay
-    LDX #$00
-    JSR delay
-
-    ; Note delay overwrites X and Y
-
-    ; Turn off drive motor for this drive
-    LDY ZP_DRIVE
-    LDA VIA_PBD
-    EOR motor_bits,Y         ; Toggle it
-    STA VIA_PBD
-
-    ; Finished
-    LDA CMD1                ; Store the command we ran
-    STA CMD_RESULT_CMD
-
-    LDA #CMD_RESULT_OK      ; Store the result
-    STA CMD_RESULT
-
-    LDA #CMD_NONE           ; Clear the last command
-    STA CMD2
-    STA CMD1
-
-    LDA #STATUS_6504_RUNNING ; Set status to back to running
-    STA STATUS_6504
-
-    RTS
-
-; Delay routine - X is the number of times to loop, roughly 1/256 of a second
-;
-delay:
-@x_loop:
-    LDY #$00        ; Y will count from 0 (256 iterations)
-@y_loop:
-    NOP             ; 2 cycles
-    NOP             ; 2 cycles 
-    NOP             ; 2 cycles
-    NOP             ; 2 cycles
-    NOP             ; 2 cycles
-    DEY             ; 2 cycles
-    BNE @y_loop     ; 3/2 cycles
-    DEX             ; 2 cycles
-    BNE @x_loop     ; 3/2 cycles
-    RTS             ; 6 cycles
-
-; VIA_B_OUT bits to control drive motor for drives 0 and 1
-motor_bits:
-    .byte $A0, $50
-.endif

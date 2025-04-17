@@ -78,7 +78,7 @@ CMD_TEST_DRIVE = $01
 
 ; These commands instruct the 6504 control routine to reset the 6504 - this
 ; jumps to the reset vector.
-CMD_RESET = $FF
+CMD_RESET = 'Z'
 
 ; These are the supported status values the 6504 routine may return.
 STATUS_6504_NONE = $00
@@ -115,3 +115,7 @@ CUTMT_OFFSET = $02
 TICK_INIT = $0F
 DELAY_INIT = $32
 CUTMT_INIT = $FF
+
+; Location of RESET vector (some for both processors, although contents will
+; differ).
+RESET = $FFFC

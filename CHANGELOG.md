@@ -2,8 +2,13 @@
 
 ## 0.1.5
 
-- Add simple IEEE-488 stack.
-- Send diagnostics message when user connects using configured device ID, channel 15 and instructs device to TALK.
+- IEEE-488 stack added.
+- Supports providing status and diagnostics information via IEEE-488 when put in TALK mode:
+    - 0 - Lists supported channels and what they report
+    - 1 - Provides summary of the test status (overall passed/failed)
+    - 2 - Provides detailed information about the test status, including any failed chips that were identified
+    - 14 - Provides version and other information about the ROM
+    - 15 - Provides Commodore-style disk status string of the format EN,EM$,ET,ES
 
 ## 0.1.4
 

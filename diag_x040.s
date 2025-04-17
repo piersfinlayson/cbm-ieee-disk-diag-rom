@@ -41,18 +41,111 @@ RESERVED = $00
                         ; us.
 
 .segment "DATA"
+;
+; Strings
+;
+
+; All strings are encoded with CbmString in order to set the MSB high in the
+; final byte.  This saves a byte vs null terminating, and allows us to test
+; the minus bit (BMI/BPL) more cheaply than processing another byte.
+
+; ROM information strings
 CbmString StrRomName, "Commodore IEEE Disk Drive Diagnostics ROM"
-CbmString StrVersion, "ROM Version: "
+CbmString StrVersion, "Version: "
 CbmString StrCopyright, "(c) 2025 Piers Finlayson"
 CbmString StrRepo, "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
 
-; Table of intro strings: low byte, high byte, action code
+; Boot string, provided alongside status code 73.  Our equivalent of:
+; "CBM DOS V2.6 1541"
+;
+; We use a max length of 22 bytes, in order to give us 8 bytes for the version
+; number, and still hit 39 bytes for the entire status string including
+; preceeding error code and command, and succeeding commas and track/sector
+; numbers
+;
+; Version number of the format major.minor.patch immediatey follows v...
+CbmString StrStatusBooted, "piers.rocks diag rom v"
+END_STR_BOOT:
+.assert (END_STR_BOOT - StrStatusBooted) <= 22, error, "StrStatusBooted too long"
+
+; Strings used in test status reporting
+CbmString StrStatusOk, "ok"
+CbmString StrStatusInternalError, "internal error"
+CbmString StrTestDelim, " Test: "
+CbmString StrZeroPage, "Zero Page"
+CbmString StrRam, "RAM"
+CbmString Str6504Space, "6504 "
+CbmString StrBoot, "Boot"
+CbmString StrTakeover, "Takeover"
+CbmString StrFailed, "Failed"
+CbmString StrPassed, "Passed"
+CbmString StrNotAttempted, "Not Attempted"
+CbmString StrSpaceDashSpace, " - "
+CbmString StrNotImplemented, "Not implemented"
+CbmString StrTestsFailed, "Test(s) failed"
+CbmString StrTestsPassed, "All tests passed"
+CbmString StrInvalidChannel, "Invalid channel"
+
+; Channel string
+CbmString StrChannel, "Channel "
+
+; Channel names
+CbmString StrChannelListing, "Channel list"
+CbmString StrRomInfo, "ROM info"
+CbmString StrTestResults, "Test results"
+CbmString StrTestSummary, "Test summary"
+CbmString StrStatus, "Drive status"
+
+;
+; Tables
+;
+
+; Table containing list of channels which are supported, and their mappings to
+; - The string describing it (used in the channel - channel listing)
+; - The string method to call to create the string
+;
+; Each entry contains 5 bytes:
+; - Byte 0: Channel number (0-15)
+; - Bytes 1/2: Word containing pointer to channel's name/purpose
+; - Bytes 3/4: Word containing pointer to string method to call to create
+;
+; Embedded below is TALK_STR_TABLE_ENTRY_LEN, which is used to jump through the
+; table testing for the channel number - we dynamically create this at compile
+; time for safety.
+;
+; Also embedded below is TALK_STR_TABLE_LEN, used when iterating through the
+; table to avoid over-shooting.
+talk_str_table:
+    .byte 0                         ; Channel num
+    .word StrChannelListing
+    .word build_channel_listing_str
+END_TALK_STR_TABLE_FIRST_ENTRY:
+TALK_STR_TABLE_ENTRY_LEN = (END_TALK_STR_TABLE_FIRST_ENTRY - talk_str_table)
+    .byte 1                         ; Channel num
+    .word StrTestSummary
+    .word build_summary_str
+    .byte 2                         ; Channel num
+    .word StrTestResults
+    .word build_test_results_str
+    .byte 14                         ; Channel num
+    .word StrRomInfo
+    .word build_rom_info_str
+    .byte 15                        ; Channel num
+    .word StrStatus
+    .word build_status_str
+TALK_STR_TABLE_END:
+TALK_STR_TABLE_LEN = (TALK_STR_TABLE_END - talk_str_table)
+
+; Table of intro strings, used by build_rom_info_str.
+;
+; Contains low byte, high byte, action code
+;
 ; Action code:
 ;   Bit 0: CR flag (0=add newline, 1=don't add NL)
 ;   Bits 1-7: Action type (0=none, 1=add version, 2=underline)
 ;
 ; Strings will be added to create the intro message in the order shown
-intro_str_table:
+rom_info_str_table:
     .word StrRomName
     .byte %00000101         ; Add NL, underline
 
@@ -65,88 +158,8 @@ intro_str_table:
     .word StrRepo
     .byte %00000000         ; Add NL, no special action
     
-INTO_STR_TABLE_END:
-INTRO_STR_TABLE_LEN = (INTO_STR_TABLE_END - intro_str_table)
-
-; Maps TALK channels to string methods to call to create a string buffer to
-; send.
-;
-; Each entry contains 5 bytes:
-; - Byte 0: Channel number (0-15)
-; - Bytes 1/2: Word containing pointer to channel's name/purpose
-; - Bytes 3/4: Word containing pointer to string method to call to create
-;
-; Strings are created and stored in STRING_BUF, which is stored in RAM.
-
-; Channel names
-CbmString StrChannelListing, "Channel list"
-CbmString StrRomInfo, "ROM info"
-CbmString StrTestResults, "Test results"
-CbmString StrTestSummary, "Test summary"
-CbmString StrStatus, "Drive status"
-
-; Channel string
-CbmString StrChannel, "Channel "
-
-; Table
-talk_str_table:
-    .byte 0                         ; Channel num
-    .word StrChannelListing
-    .word build_channel_listing_str
-END_TALK_STR_TABLE_FIRST_ENTRY:
-TALK_STR_TABLE_ENTRY_LEN = (END_TALK_STR_TABLE_FIRST_ENTRY - talk_str_table)
-    .byte 1                         ; Channel num
-    .word StrTestSummary
-    .word build_summary_str
-    .byte 2                         ; Channel num
-    .word StrRomInfo
-    .word build_rom_info_str
-    .byte 3                         ; Channel num
-    .word StrTestResults
-    .word build_test_results_str
-    .byte 15                        ; Channel num
-    .word StrStatus
-    .word build_status_str
-TALK_STR_TABLE_END:
-TALK_STR_TABLE_LEN = (TALK_STR_TABLE_END - talk_str_table)
-CbmString StrInvalidChannel, "Invalid channel"
-
-; String to use in status response indicating failed tests
-CbmString StrTestsFailed, "Test(s) failed"
-END_STR_TESTS_FAILED:
-.assert (END_STR_TESTS_FAILED - StrTestsFailed) <= 29, error, "StrTestsFailed too long"
-; String to use in status response indicating passed tests
-CbmString StrTestsPassed, "All tests passed"
-END_STR_TESTS_PASSED:
-.assert (END_STR_TESTS_PASSED - StrTestsPassed) <= 29, error, "StrTestsPassed too long"
-
-CbmString StrNotImplemented, "Not implemented"
-
-; Boot string, provided alongside status code 73.  Our equivalent of:
-; "CBM DOS V2.6 1541"
-;
-; We use a max length of 22 bytes, in order to give us 8 bytes for the version
-; number, and still hit 39 bytes for the entire status string including
-; preceeding error code and command, and succeeding commas and track/sector
-; numbers
-CbmString StrStatusBooted, "piers.rocks diag rom v"
-END_STR_BOOT:
-.assert (END_STR_BOOT - StrStatusBooted) <= 22, error, "StrBoot too long"
-
-CbmString StrStatusOk, "ok"
-
-CbmString StrStatusInternalError, "internal error"
-
-CbmString StrTestDelim, " Test: "
-CbmString StrZeroPage, "Zero Page"
-CbmString StrRam, "RAM"
-CbmString Str6504Space, "6504 "
-CbmString StrBoot, "Boot"
-CbmString StrTakeover, "Takeover"
-CbmString StrFailed, "Failed"
-CbmString StrPassed, "Passed"
-CbmString StrNotAttempted, "Not Attempted"
-CbmString StrSpaceDashSpace, " - "
+ROM_INFO_STR_TABLE_END:
+ROM_INFO_STR_TABLE_LEN = (ROM_INFO_STR_TABLE_END - rom_info_str_table)
 
 ; Pages to test in our first RAM test
 RamTest0:
@@ -2007,12 +2020,12 @@ build_rom_info_str:
     STX STI                 ; Save current string table index in zero page
 
     ; Load string address (as a word)
-    LDA intro_str_table,X   ; Get low byte
+    LDA rom_info_str_table,X   ; Get low byte
     STA STR_PTR
-    LDA intro_str_table+1,X ; Get high byte
+    LDA rom_info_str_table+1,X ; Get high byte
     STA STR_PTR+1
     
-    LDA intro_str_table+2,X ; Get flags/action code
+    LDA rom_info_str_table+2,X ; Get flags/action code
     PHA                     ; Save action code for later
 
     AND #$01                ; Isolate CR flag (bit 0)
@@ -2036,7 +2049,7 @@ build_rom_info_str:
     INX                     ; Increment 3 times for next string
     INX
     INX
-    CPX #INTRO_STR_TABLE_LEN
+    CPX #ROM_INFO_STR_TABLE_LEN ; Check if we've reached the end
     BCC @string_loop        ; Continue if not at end
     ; Otherwise fall through to done
 
