@@ -112,7 +112,7 @@ TALK_STR_TABLE_LEN = (TALK_STR_TABLE_END - talk_str_table)
 CbmString StrInvalidChannel, "Invalid channel"
 
 ; String to use in status response indicating failed tests
-CbmString StrTestsFailed, "Tests(s) failed"
+CbmString StrTestsFailed, "Test(s) failed"
 END_STR_TESTS_FAILED:
 .assert (END_STR_TESTS_FAILED - StrTestsFailed) <= 29, error, "StrTestsFailed too long"
 ; String to use in status response indicating passed tests
@@ -1391,8 +1391,6 @@ build_invalid_channel_str:
 test_failed_any:
     LDA #$00
     CMP RESULT_ZP
-    BNE @failed
-    CMP DEVICE_ID
     BNE @failed
     CMP RESULT_RAM_TEST
     BNE @failed
