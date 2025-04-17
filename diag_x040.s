@@ -1752,8 +1752,7 @@ add_failed_ram_chips:
     LDA RESULT_RAM_TEST         ; Load the RAM test result
     STA NRTR                    ; Store for processing
     LDX #$00                    ; X will be our bit counter (0-7)
-    TXA                         ; A will track if we've output any chips yet
-    STA NROC                    ; Store in zero page
+    STX NROC                    ; Store whether we've output any chips yet
 
 @chip_loop:
     LSR NRTR                ; Shift right to check current bit
@@ -1761,12 +1760,12 @@ add_failed_ram_chips:
 
     ; This chip failed - output its name
     LDA NROC                ; Check if we've output any chips yet
-    BEQ @first_chip         ; Skip comma for first chip
+    BEQ @skip_comma         ; Skip comma for first chip
 
     JSR add_comma_space
     BEQ @done               ; Exit if buffer full
 
-@first_chip:
+@skip_comma:
     INC NROC                ; Mark that we've output at least one chip
 
     ; Output the 'U' at the beginning of the name
@@ -1789,7 +1788,7 @@ add_failed_ram_chips:
     AND #$04                ; Check if bit is in upper half (bits 4-7)
     BEQ @output_five        ; If 0, output '5'
     LDA #$34                ; ASCII '4'
-    JMP @output_digit
+    BNE @output_digit       ; A is non zero so always branches
 @output_five:
     LDA #$35                ; ASCII '5'
 @output_digit:
