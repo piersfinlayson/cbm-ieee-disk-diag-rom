@@ -1682,6 +1682,11 @@ add_comma_space:
 @done:
     RTS
 
+; Output failed chips from ZP test
+;
+; Strictly some of the code here is moot - we'll never get here if UE1 failed.
+; But we'll do it by the book, anyway.
+;
 ; RESULT_ZP contains 1 in bit 0 for UE1 and a 1 in bit 1 for UC1.
 add_failed_zp_chips:
     JSR add_dash_and_spaces
@@ -1739,6 +1744,7 @@ add_failed_zp_chips:
 @done:
     RTS
 
+; Add which RAM chips failed during the test to the output string
 add_failed_ram_chips:
     JSR add_dash_and_spaces
     BEQ @done               ; Exit if buffer full
