@@ -146,6 +146,7 @@ CbmString StrTakeover, "Takeover"
 CbmString StrFailed, "Failed"
 CbmString StrPassed, "Passed"
 CbmString StrNotAttempted, "Not Attempted"
+CbmString StrSpaceDashSpace, " - "
 
 ; Names of the various RAM chips.
 ; 'U' isn't included to simplify handling code
@@ -1656,17 +1657,12 @@ add_zero_page_result:
     RTS
 
 ; Adds " - " to the string
-add_dash_and_spaces:
-    LDA #$20                ; space
-    JSR add_char
-    BEQ @done               ; Exit if buffer full
-
-    LDA #$2D                ; dash
-    JSR add_char
-    BEQ @done               ; Exit if buffer full
-
-    LDA #$20                ; space
-    JSR add_char
+add_space_dash_space:
+    LDA #<StrSpaceDashSpace
+    STA STR_PTR
+    LDA #>StrSpaceDashSpace
+    STA STR_PTR+1
+    JSR add_string_no_nl
 
 @done:
     RTS
@@ -1689,7 +1685,7 @@ add_comma_space:
 ;
 ; RESULT_ZP contains 1 in bit 0 for UE1 and a 1 in bit 1 for UC1.
 add_failed_zp_chips:
-    JSR add_dash_and_spaces
+    JSR add_space_dash_space
     BEQ @done               ; Exit if buffer full
 
     LDA RESULT_ZP           ; Load the zero page test result
@@ -1746,7 +1742,7 @@ add_failed_zp_chips:
 
 ; Add which RAM chips failed during the test to the output string
 add_failed_ram_chips:
-    JSR add_dash_and_spaces
+    JSR add_space_dash_space
     BEQ @done               ; Exit if buffer full
 
     ; Now log any failed RAM chips
@@ -1780,15 +1776,21 @@ add_failed_ram_chips:
     ; Get the chip name from RamChipNames
     TXA                         ; Put bit number in A
     ASL A                       ; Multiply by 2 for RamChipNames indexing
+    STY NRY                     ; Store String index Y for later 
     TAY                         ; Use as index
+    STY NRI                     ; Store index
     
     ; Output first character of chip name
     LDA RamChipNames,Y          ; Get the letter (C, D, E, F)
+    LDY NRY                     ; Reload String index Y
     JSR add_char
     BEQ @done                   ; Exit if buffer full
     
     ; Output second character of chip name
+    STY NRY                     ; Save off new String index Y
+    LDY NRI                     ; Reload chip index
     LDA RamChipNames+1,Y        ; Get the number (4 or 5)
+    LDY NRY                     ; Reload String index
     JSR add_char
     BEQ @done                   ; Exit if buffer full
 
