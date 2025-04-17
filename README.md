@@ -299,7 +299,7 @@ A one-line summary of whether the drive passed all tests, or not.
 
 ### 📊Detailed Diagnostics Results
 
-Detailed diagnostics results are reported 
+Detailed diagnostics results are reported, including whether UC1 failed the zero-page test and the location of any RAM chips that failed the RAM test. 
 
 ## 🔨Building From Source
 
