@@ -41,7 +41,7 @@ RESERVED = $00
                         ; us.
 
 .segment "DATA"
-CbmString StrRomName, "Commodore IEEE Disk Drive Diagnostics ROM by piers.rocks"
+CbmString StrRomName, "Commodore IEEE Disk Drive Diagnostics ROM"
 CbmString StrVersion, "ROM Version: "
 CbmString StrCopyright, "(c) 2025 Piers Finlayson"
 CbmString StrRepo, "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
@@ -1468,6 +1468,8 @@ build_status_str:
     BNE @add_status_string  ; We know #>StrStatusInternalError is not 0, so BNE
 
 @status_ok:
+    ; Although adding 2 chars is cheaper the add_char way, this way is cheaper
+    ; here as we reuse the JSR for all approaches, and it's more obvious. 
     LDA #<StrStatusOk
     STA STR_PTR
     LDA #>StrStatusOk
@@ -1643,7 +1645,7 @@ add_zero_page_result:
     JSR add_not_attempted
     RTS
 
-; Adds " - " to the string
+; Adds " - " to the string - 12 bytes, plus 3 for string
 add_space_dash_space:
     LDA #<StrSpaceDashSpace
     STA STR_PTR
@@ -1654,6 +1656,9 @@ add_space_dash_space:
 @done:
     RTS
 
+; Add ", " - 13 bytes, would be 14 bytes including string if we used the
+; add_string_no_nl approach.  (It takes fewer bytes to do 2 chars this way,
+; but is cheaper to do 3 and more chars the other way.)
 add_comma_space:
     LDA #$2C                ; Comma
     JSR add_char
@@ -2043,8 +2048,9 @@ build_rom_info_str:
 @do_version:
     JSR add_version_number
     BEQ @done
-    ; Fall through into do_underline - we need this after adding version
-    ; number
+    JSR add_newline
+    BNE @next_string
+    BEQ @done
 
 @do_underline:
     JSR add_underline       ; Add underline characters
