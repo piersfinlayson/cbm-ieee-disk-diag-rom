@@ -7,9 +7,11 @@
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
 ; Exports
-.export with_stack_main
+.export start, with_stack_main
+.export nmi_handler, irq_handler
 
 ; Imports
+.import secondary_start, SECONDARY_CODE_LEN
 .import build_invalid_channel_str
 .import talk_str_table
 .import TALK_STR_TABLE_ENTRY_LEN, TALK_STR_TABLE_LEN
@@ -897,10 +899,10 @@ takeover_6504:
 ; Will overwrite A, X and Y
 copy_6504_cmd:
     ; Set up the source address for the 6504 code we want to copy
-    LDA #<SECONDARY_CODE_start   ; Store the low byte of stored 6504 code
-    .assert <SECONDARY_CODE_start = $00, error, "6504 code not at $00"
+    LDA #<secondary_start   ; Store the low byte of stored 6504 code
+    .assert <secondary_start = $00, error, "6504 code not at $00"
     STA CP1
-    LDA #>SECONDARY_CODE_start   ; Store the high byte of stored 6504 code
+    LDA #>secondary_start   ; Store the high byte of stored 6504 code
     STA CP1+1
 
     ; Set up destination addresses for 6504 code we want to copy
@@ -912,7 +914,7 @@ copy_6504_cmd:
     ; Do the copy, byte by byte.
     LDY #$00                ; Set Y to 0 as an index for the copy
     .assert SECONDARY_CODE_LEN <= $FF, error, "6504 code too long"
-    LDX #SECONDARY_CODE_LEN      ; Get the length of the 6504 code
+    LDX #<SECONDARY_CODE_LEN      ; Get the length of the 6504 code
     BEQ @copy_done          ; If length is 0, we're done
 @copy_loop:
     LDA (CP1),Y             ; Load the byte from the source address
@@ -1530,17 +1532,12 @@ send_byte:
     STA IEEE_CONTROL
     RTS
 
-; Our no-op NMI handler
-nmi_handler:
-    RTI
-
-; Our IRQ handler
-;
-; We jump to the address configured in zero page (and this must be initialized)
-; before interrupts are enabled, or bad things will happen.  This allows us
-; to change what gets called on interrupts dynamically.
-irq_handler:
-    JMP (IRQ_HANDLER)
+; "Routine" which jumps to an indirect address.  This is in place of being
+; to JSR to an indirect address, which the 6502 doesn't support.  Only actual
+; routines must be jumped to here, or they won't return to the point that did
+; JSR indirect_jsr.
+indirect_jsr:
+    JMP (IEEE_JMP_ADDR)     ; Jump to the routine we pointed to
 
 ; Function to set our interrupt handler
 ;
@@ -1554,26 +1551,16 @@ set_irq_handler:
     CLI
     RTS
 
-; "Routine" which jumps to an indirect address.  This is in place of being
-; to JSR to an indirect address, which the 6502 doesn't support.  Only actual
-; routines must be jumped to here, or they won't return to the point that did
-; JSR indirect_jsr.
-indirect_jsr:
-    JMP (IEEE_JMP_ADDR)     ; Jump to the routine we pointed to
+; Our no-op NMI handler.  NMI is tied high on the drive, so this should never
+; be called.  If we wanted to save a byte we could make this the location of
+; another RTI call. 
+nmi_handler:
+    RTI
 
-; Include the 6504 binary, which is pre-built by the Makefile.  This allows us
-; to copy the routine(s) we want from this binary to the shared RAM and then
-; have the 6504 execute it.
-.segment "SECONDARY_CODE"
-SECONDARY_CODE_start:
-.incbin "build/secondary_control.bin"
-SECONDARY_CODE_end:
-
-SECONDARY_CODE_LEN = SECONDARY_CODE_end - SECONDARY_CODE_start
-
-; If we're installed as the $F000 ROM, we need to provide a jump vector to
-; START.
-.segment "VECTORS"
-.addr nmi_handler   ; NMI handler
-.addr start
-.addr irq_handler   ; IRQ handler
+; Our IRQ handler
+;
+; We jump to the address configured in zero page (and this must be initialized)
+; before interrupts are enabled, or bad things will happen.  This allows us
+; to change what gets called on interrupts dynamically.
+irq_handler:
+    JMP (IRQ_HANDLER)

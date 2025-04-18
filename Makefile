@@ -16,7 +16,7 @@ CA65_OPTS_SEC = $(CA65_OPTS) -D SECONDARY_CPU=1
 
 # Primary CPU source files
 PRI_SRC_DIR = $(SRC_DIR)/primary
-PRI_SRCS = header.s data.s string.s
+PRI_SRCS = header.s data.s string.s secondary.s
 PRI_MAIN = main.s
 PRI_OBJS = $(patsubst %.s,$(BUILD_DIR)/pri_%.o,$(PRI_SRCS))
 

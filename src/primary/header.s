@@ -8,9 +8,11 @@
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
-.include "include/version.inc"
+; Imports
+.import start, with_stack_main
+.import nmi_handler, irq_handler
 
-.import with_stack_main
+.include "include/version.inc"
 
 ; Magic byte at the start of the diagnostics ROM (located at $D000), which is
 ; tested by the stock ROMs, to see if the diagnostics ROM is present.
@@ -38,3 +40,10 @@ RESERVED = $00
                         ; already done that when we're the dignostics ROM.  No
                         ; point in JSR and RTS here, as the main ROM JMPs to
                         ; us.
+
+; If we're installed as the $F000 ROM, we need to provide a jump vector to
+; START.
+.segment "VECTORS"
+.addr nmi_handler   ; NMI handler
+.addr start
+.addr irq_handler   ; IRQ handler
