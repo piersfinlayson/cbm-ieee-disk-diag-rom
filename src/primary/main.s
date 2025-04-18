@@ -1601,9 +1601,9 @@ command_loop:
 
     ; Handle drive 0/1 commands separately
     CMP #CMD_DR0
-    BEQ @drive_0
+    BEQ @drive0
     CMP #CMD_DR1
-    BEQ @drive_0
+    BEQ @drive1
 
 @process_cmd:
     ; Handle all other commands (including drives - they branch back to here)
@@ -1615,13 +1615,13 @@ command_loop:
     STA CMD1
     BNE @loop          ; Should always be non-zero!
 
-@drive_0:
+@drive0:
     PHA
     LDA #DR0_LED
     .assert DR0_LED <> 0, error, "DR0_LED = 0"
     BNE @set_leds
 
-@drive_1:
+@drive1:
     PHA
     LDA #DR1_LED
     .assert DR1_LED <> 0, error, "DR1_LED = 0"

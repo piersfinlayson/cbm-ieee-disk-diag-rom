@@ -19,8 +19,15 @@ RRIOT_PBDDR = $83
 
 MOTOR_PORTS = VIA_PBD
 
+; Used for the motor control for the selected drive
 ZP_MOTOR_MASK_OFF = $00
 ZP_MOTOR_MASK_ON = $01
+
+; Zero page locations we're using for temporary storage
+ZP_PHASE_CURRENT  = $0007   ; Current stepper phase bits
+ZP_NON_STEP_BITS  = $0008   ; Non-stepper bits to preserve
+ZP_PHASE_MASK     = $000A   ; Phase mask for the selected drive
+ZP_PHASE_STEP     = $000B   ; Phase increment value
 
 ; Byte 0 = Drive 0, Byte 1 = Drive 1.  1 off, 0 on
 MOTOR_MASK:
@@ -43,21 +50,27 @@ control:
     LDA #$00
     STA VIA_ACR     ; Disable auxiliary control register features
     LDA #$07
-    STA RRIOT_PBDDR ; Set RRIOT port B pins 0 -2 (DRV_SEL, DR0, DR1) tooutputs
+    STA RRIOT_PBDDR ; Set RRIOT port B pins 0 -2 (DRV_SEL, DR0, DR1) to outputs
 
     ; Set status to running.  We cannot change this in the loop because we
     ; might change the shared RAM under the feet of the RAM test.
     LDA #STATUS_6504_RUNNING ; Set status to running
     STA STATUS_6504
     .assert STATUS_6504_RUNNING <> 0, error, "STATUS_6504_RUNNING must not be 0"
-    BNE @main_loop
+
+    ; Set ourselves up as drive 0 by default.  It'll branch back to
+    ; @main_loop_ok once complete
+    LDA #$00
+    BEQ @drive0
 
 ; Main loop, which checks whether to run a command
 @main_loop_ok:
-    LDX #$00
-    STX CMD1                ; Reset both command bytes
-    STX CMD2
-    STX CMD_RESULT          ; Store result of command
+    LDA #CMD_RESULT_OK
+@main_loop_result:
+    STA CMD_RESULT          ; Store result of command
+    LDA #CMD_NONE
+    STA CMD1                ; Reset both command bytes
+    STA CMD2
 @main_loop:
     ; Check whether CMD1 is set to a valid command
     LDA CMD1
@@ -80,7 +93,10 @@ control:
     BEQ @motor_on
     CMP #CMD_MOTOR_OFF
     BEQ @motor_off
-    BNE @main_loop          ; If not, loop back and check CMD1 again
+    
+    STA CMD_RESULT_CMD      ; Set the result
+    LDA #CMD_RESULT_ERR
+    BNE @main_loop_result   ; If not, loop back and check CMD1 again
 
 @drive0:
     LDX #$00
