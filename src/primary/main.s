@@ -1593,7 +1593,7 @@ process_command_byte:
 ; commands in IEEE_CMD_BUF.
 command_loop:
     LDA #DR0_LED
-    BEQ @set_leds
+    BNE @set_leds
 @loop:
     LDA IEEE_CMD_BUF
 
