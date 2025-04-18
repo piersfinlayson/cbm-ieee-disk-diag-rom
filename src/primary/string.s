@@ -316,7 +316,8 @@ build_status_str:
     RTS
 
 ;
-; Routines to add specific strings
+; Routines to add specific strings.  Called from multiple places so cheaper to
+; have them as separate routines.
 ;
 
 ; Add "Passed" string
@@ -346,6 +347,7 @@ add_not_attempted:
     JSR add_string_no_nl
     RTS
 
+; Adds "6504 "
 add_6504:
     LDA #<Str6504Space
     STA STR_PTR
