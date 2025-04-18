@@ -1582,7 +1582,7 @@ process_command_byte:
 
     ; No need to reset command buffer in this case as the zero page test will
     ; clear the whole zero page down
-    
+
     JMP (RESET)         ; Reset the primary processor
 @done_clear:
     LDX #$00            ; Clear command before leaving the interrupt handler
@@ -1630,7 +1630,6 @@ command_loop:
 
 @set_leds:
     STA CMD_LOOP_LED
-    LDA CMD_LOOP_LED
     STA RIOT_UE1_PBD    ; Set LED pattern to drive 0 LED
     PLA
     BNE @process_cmd    ; Should always be non-zero!
