@@ -125,7 +125,7 @@ RESULT_ZP = $21 + ZP_OFFSET
 DEVICE_ID = $22 + ZP_OFFSET
 
 ; Bits 0-3 cover the lower nibble of the page number ($1x-$4x)
-; Bits 4-7 cover the upper nibble of the page number ($10-$43)
+; Bits 4-7 cover the upper nibble of the page number ($1x-$4x)
 RESULT_RAM_TEST = $23 + ZP_OFFSET
 
 ; Used to store test results from check_6504_booted.

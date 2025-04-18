@@ -101,7 +101,7 @@ setup_stack:
 ; ROM will call into the diagnostics ROM if present), as when we are launched
 ; as a diagnostics ROM, the main $F000/$E000 ROMs have already tested zero page
 ; and set up the stack.
-.proc with_stack_main
+with_stack_main:
     JSR between_tests
 
     JSR get_device_id
@@ -134,25 +134,23 @@ setup_stack:
     JSR between_tests
 
     ; Initialize the IEEE stack
-    JSR ieee_init    
+    JSR ieee_init
 
-    JMP finished
-.endproc
+    ; Fall through to our main flash_loop reporting errors via LED
 
-; Get the hardware configured device ID from the drive.
-; Lines PB0, PB1 and PB2 are used to select this.  If they are low, they are
-; 0.  PB0 is the least significant bit, PB2 is the most significant bit.
-; Device IDs are generally expected to be between 8-15, so we have to add 8 to
-; the result.
-get_device_id:
-    LDA RIOT_UE1_PBD    ; Read port B status from the RIOT chip
-    AND #$07            ; Just select the 3 least significant bits
-    ORA #$08            ; Add 8 to get the device ID.
-    STA DEVICE_ID       ; Store the device ID in zero page
-    LDA #TEST_DEV_ID    ; Mark this test as having been performed
-    ORA TESTS_6502
-    STA TESTS_6502      ; Store result in zero page
-    RTS
+; Our diagnostics routine is now done, so we go through and report:
+; - any errors
+; - the device ID
+;
+; We do this in a loop, forever.
+flash_loop:
+    JSR between_reports ; Pause
+    JSR report_zp       ; Report zero page errors, if any
+    JSR report_ram      ; Report RAM errors, if any
+    JSR report_6504     ; Report 6504 errors, if any
+    JSR report_drives   ; Report drive test errors, if any
+    JSR report_dev_id   ; Report the device ID, if we have it
+    JMP flash_loop      ; Go around again
 
 ; Zero page test failed.  Flash all ERR LED and specific drive LED, with 0.5s
 ; delay between flashes.  X indicates which byte failed.  We start at byte 0,
@@ -203,19 +201,16 @@ zp_error:
     BNE @x_loop ; 3/2 cycles
     BEQ @toggle_leds    ; We're done - jump back to toggle LEDs
 
-; Our diagnostics routine is now done, so we go through and report:
-; - any errors
-; - the device ID
-;
-; We do this in a loop, forever.
-finished:
-    JSR between_reports ; Pause
-    JSR report_zp       ; Report zero page errors, if any
-    JSR report_ram      ; Report RAM errors, if any
-    JSR report_6504     ; Report 6504 errors, if any
-    JSR report_drives   ; Report drive test errors, if any
-    JSR report_dev_id   ; Report the device ID, if we have it
-    JMP finished        ; Go around again
+; Check whether RAM test passed for $1000-13FF.  If not, we can't continue, and
+; will immediately jump to the finished routine.
+check_ram_result:
+    LDA RESULT_RAM_TEST ; Load RAM test result
+    AND #$11            ; Check whether RAM test passed for $1000-$13FF
+    BNE flash_loop      ; Branch if it failed for that range, straight to
+                        ; the flash_loop routine, skipping IEEE stack
+                        ; initialization as that requires the first bank of
+                        ; static RAM to be functional.
+    RTS                 ; It passed as much as we need it to
 
 ; Report any zero page error(s)
 ;
@@ -384,6 +379,21 @@ report_dev_id:
 
 @done:
     JSR between_reports ; pause for 1s with all LEDs off
+    RTS
+
+; Get the hardware configured device ID from the drive.
+; Lines PB0, PB1 and PB2 are used to select this.  If they are low, they are
+; 0.  PB0 is the least significant bit, PB2 is the most significant bit.
+; Device IDs are generally expected to be between 8-15, so we have to add 8 to
+; the result.
+get_device_id:
+    LDA RIOT_UE1_PBD    ; Read port B status from the RIOT chip
+    AND #$07            ; Just select the 3 least significant bits
+    ORA #$08            ; Add 8 to get the device ID.
+    STA DEVICE_ID       ; Store the device ID in zero page
+    LDA #TEST_DEV_ID    ; Mark this test as having been performed
+    ORA TESTS_6502
+    STA TESTS_6502      ; Store result in zero page
     RTS
 
 ; Run one of the static RAM tests
@@ -656,16 +666,6 @@ test_ram_byte_pattern:
 @done:
     RTS                 ; Return from subroutine
 
-; Check whether RAM test passed for $1000-13FF.  If not, we can't continue, and
-; will immediately jump to the finished routine.
-check_ram_result:
-    LDA RESULT_RAM_TEST ; Load RAM test result
-    AND #$11            ; Check whether RAM test passed for $1000-$13FF
-    BNE @error          ; Branch if it failed for that range
-    RTS                 ; It passed as much as we need it to
-@error:
-    JMP finished        ; It failed - we can't continue, jump immediately to
-                        ; the finished routine
 
 ; Check that the 6504 booted successfully.
 ;
@@ -1418,9 +1418,6 @@ talk_handler:
     JMP @transmit
 
 @valid_chan:
-    LDA #DR0_LED
-    STA RIOT_UE1_PBD        ; Set drive 0 LED on
-
     ; Get pointer to routine to build the appropriate string (at bytes 3/4)
     ; from the channel number index.
     ; As 6502 doesn't support indirect JSR, we dynamically build a JMP
@@ -1431,10 +1428,6 @@ talk_handler:
     LDA talk_str_table+4,X
     STA IEEE_JMP_ADDR+1
     JSR indirect_jsr
-
-    LDA #DR1_LED
-    STA RIOT_UE1_PBD        ; Set drive 1 LED on
-
 @transmit:
     ; Send the string from STRING_BUF
     LDX #$00

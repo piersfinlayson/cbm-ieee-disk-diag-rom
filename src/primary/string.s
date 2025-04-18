@@ -161,7 +161,7 @@ build_invalid_channel_str:
     LDA #>StrInvalidChannel
     STA STR_PTR+1
 
-    JSR add_string_no_nl
+    JSR add_string_no_nl    ; Don't check Z bit as we've finished now anyway
     JSR mark_last_byte_str
     RTS
 
@@ -508,7 +508,7 @@ add_failed_ram_chips:
     ; upper)
     TXA                     ; Get bit number (index) again
     AND #$04                ; Check if bit is in upper half (bits 4-7)
-    BEQ @output_five        ; If 0, output '5'
+    BNE @output_five        ; If 0, output '5'
     LDA #$34                ; ASCII '4'
     BNE @output_digit       ; A is non zero so always branches
 @output_five:
@@ -724,7 +724,7 @@ build_channel_listing_str:
 build_rom_info_str:
     JSR setup_string_buf
 
-    LDX #0                  ; String table index
+    LDX #$00                ; String table index
 @string_loop:
     STX STI                 ; Save current string table index in zero page
 
@@ -841,7 +841,7 @@ output_decimal_byte:
     BCS @two_digits     ; If >= 10, handle two digits
 
     ; It's a single digit (0-9)
-    CPX #0              ; Test if we want leading zeros
+    CPX #$00            ; Test if we want leading zeros
     BEQ @single_digit   ; If X=0, no leading zero needed
     
     ; Output leading zero for single-digit numbers
@@ -856,7 +856,7 @@ output_decimal_byte:
     
 @two_digits:
     ; Divide by 10 using repeated subtraction
-    LDX #0          ; X will hold the tens digit
+    LDX #$00        ; X will hold the tens digit
 @div_loop:
     SEC
     SBC #10
