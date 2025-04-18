@@ -185,6 +185,14 @@ We can also use this capability to add further 6504 tests in future, as we have 
 
 ## 📊Detailed Result Information
 
+Detailed results are reported via LED flash codes.  These results report in a loop, with all error results being reported sequentially followed by the device ID - and then the loop restarts.
+
+Error results are distinguished by the ERR LED being lit.  The device ID is reported with the ERR LED off.
+
+If the [diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) or the [UE1 zero page test failed](#ue1-zero-page-test-failed) only that error will be reported - as other tests cannot be run.
+
+If the drive proceeded beyond these tests and the first bank of static RAM (UC5/UC4) passed testing (which you can identify via [flash codes](#️static-ram-check-failed)), the drive will attempt to enable its IEEE-488 stack, enabling [reporting via IEEE-488](#reporting-via-ieee-488).  In this case it would be easier to retrieve diagnostics via IEEE-488 than via the LEDs.
+
 ### ❌Diagnostics ROM failed to run
 
 In this scenario, all three LEDs will be lit.
@@ -248,7 +256,7 @@ With the ERR LED off, the number of flashes, before pausing, indicates the hardw
 
 Once the diagnostics tests have been run, and flash codes are being used to [report diagnostics results](#detailed-result-information), the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controlled via the hardware configured hardware ID, which is [reported via flash codes](#reporting-device-id).
 
-The drive can be instructed to provide its configured information by settig it to talk on the appropriate channel.
+Assuming the drive's IEEE-488 hardware is functional, the drive can then be instructed to provide its configured information by settig it to talk on the appropriate channel.
 
 An explanation of the various types of information follows.  While [📟 Last Operation Status](#last-operation-status) and [📋Channel Listing](#channel-listing) are available on the specified channels, information on other channels may vary depending on the ROM version.  Use the [📋Channel Listing](#channel-listing) to see what is available on each channel.
 
@@ -369,13 +377,15 @@ See [❓FAQ](./FAQ.md) for a list of frequently asked questions.
 
 This section lists some potential future enhancements:
 
-🔌 Explicitly test each IEEE-488 line prior to enabling IEEE-488 support.
+🔌 Explicitly test each IEEE-488 line prior to enabling IEEE-488 support.  See [docs/specs/IEEE-test.md](docs/specs/IEEE-test.md) for a proposal.
 
 📡 Ability to send diagnostics information via IEEE-488 port using a serial protocol and just lines available on UE1 - to get around issues with UC1.
 
 🧠 Additional 6504 and supporting component tests.
 
 💽 Test drive mechanisms, which are driven via the 6504.
+
+👂 Allow drive tests to be manually driven via IEEE-488 LISTEN commands.  See [docs/specs/LISTEN-commands.md](docs/specs/LISTEN-commands.md) for a proposal.
 
 📈 Support other drives, including 8050 and 8250.
 
