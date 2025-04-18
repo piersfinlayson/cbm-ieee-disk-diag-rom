@@ -1,10 +1,10 @@
-; This file contains zero page address allocations for the 6502 
-;
+; This file contains zero page address allocations for the primary processor. 
+
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
-.if .not .defined(CPU_6502)
+.if .not .defined(PRIMARY_CPU)
     .error "This file is only used by the 6502"
 .endif
 

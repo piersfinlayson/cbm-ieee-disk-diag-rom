@@ -1,5 +1,5 @@
-; This file contains macros used by the project 
-;
+; This file contains macros used by the project. 
+
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.

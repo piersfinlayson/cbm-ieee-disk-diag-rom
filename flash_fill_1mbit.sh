@@ -39,8 +39,8 @@ if [ $# -gt 0 ]; then
 fi
 
 # Input and output files based on the image type
-INPUT_FILE="diag_x040_${IMAGE_TYPE}.bin"
-OUTPUT_FILE="${IMAGE_TYPE}_1mbit.bin"
+INPUT_FILE="build/ieee_diag_${IMAGE_TYPE}.bin"
+OUTPUT_FILE="build/${IMAGE_TYPE}_1mbit.bin"
 
 # Size of 1Mbit in bytes (1,048,576 bits = 131,072 bytes)
 MBIT_SIZE=$((1024 * 1024 / 8))

@@ -1,43 +1,66 @@
-# 6502 file definitions
-SOURCE = diag_x040.s
-OBJ_F000 = diag_x040_f000.o
-OBJ_D000 = diag_x040_d000.o
-BIN_F000 = diag_x040_f000.bin
-BIN_D000 = diag_x040_d000.bin
+# Makefile for the Diagnostics ROM.
 
-# 6504 definitions
-SOURCE_6504 = diag_x040_6504.s
-OBJ_6504 = diag_x040_6504.o
-BIN_6504 = diag_x040_6504.bin
+# Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
+#
+# Licensed under the MIT License.  See [LICENSE] for details.
 
-CA65_OPTS = -W1
+# Build directories
+BUILD_DIR = build
+CONFIG_DIR = config
+SRC_DIR = src
+
+# Common compiler options
+CA65_OPTS = -W1 -I .
+CA65_OPTS_PRI = $(CA65_OPTS) -D PRIMARY_CPU=1
+CA65_OPTS_SEC = $(CA65_OPTS) -D SECONDARY_CPU=1
+
+# Primary CPU source files
+PRI_SRC_DIR = $(SRC_DIR)/primary
+PRI_SRCS = header.s data.s string.s
+PRI_MAIN = main.s
+PRI_OBJS = $(patsubst %.s,$(BUILD_DIR)/pri_%.o,$(PRI_SRCS))
+
+# Primary ROM variants
+VARIANTS = f000 d000
+ROM_BINS = $(patsubst %,$(BUILD_DIR)/ieee_diag_%.bin,$(VARIANTS))
+
+# Secondary CPU source files
+SEC_SRC_DIR = $(SRC_DIR)/secondary
+SEC_CONTROL_SRC = $(SEC_SRC_DIR)/control.s
+SEC_CONTROL_OBJ = $(BUILD_DIR)/secondary_control.o
+SEC_CONTROL_BIN = $(BUILD_DIR)/secondary_control.bin
 
 # Default target
-all: $(BIN_F000) $(BIN_D000)
+all: $(ROM_BINS)
 
-# Build 6504 binary
-$(OBJ_6504): $(SOURCE_6504)
-	ca65 $(CA65_OPTS) $(SOURCE_6504) -o $(OBJ_6504)
+# Secondary CPU compilation
+$(SEC_CONTROL_OBJ): $(SEC_CONTROL_SRC)
+	ca65 $(CA65_OPTS_SEC) $< -o $@
 
-$(BIN_6504): $(OBJ_6504)
-	ld65 -t none -o $(BIN_6504) $(OBJ_6504)
+$(SEC_CONTROL_BIN): $(SEC_CONTROL_OBJ)
+	ld65 -t none -o $@ $(SEC_CONTROL_OBJ)
 
-# F000 version
-$(OBJ_F000): $(SOURCE) $(BIN_6504)
-	ca65 $(CA65_OPTS) $(SOURCE) -o $(OBJ_F000) -D F000_BUILD
+# Pattern rule for primary CPU components
+$(BUILD_DIR)/pri_%.o: $(PRI_SRC_DIR)/%.s
+	ca65 $(CA65_OPTS_PRI) $< -o $@
 
-# D000 version
-$(OBJ_D000): $(SOURCE) $(BIN_6504)
-	ca65 $(CA65_OPTS) $(SOURCE) -o $(OBJ_D000) -D D000_BUILD
+# Primary main.s for each variant
+$(BUILD_DIR)/pri_main_%.o: $(PRI_SRC_DIR)/$(PRI_MAIN) $(SEC_CONTROL_BIN)
+	ca65 $(CA65_OPTS_PRI) $< -o $@ -D $(shell echo $* | tr a-z A-Z)_BUILD
 
-# Link versions
-$(BIN_F000): $(OBJ_F000) diag_x040_f000.cfg
-	ld65 -C diag_x040_f000.cfg -o $(BIN_F000) $(OBJ_F000)
-
-$(BIN_D000): $(OBJ_D000) diag_x040_d000.cfg
-	ld65 -C diag_x040_d000.cfg -o $(BIN_D000) $(OBJ_D000)
+# Linking rules for each variant
+$(BUILD_DIR)/ieee_diag_%.bin: $(BUILD_DIR)/pri_main_%.o $(PRI_OBJS) $(CONFIG_DIR)/primary_%.cfg
+	ld65 -C $(CONFIG_DIR)/primary_$*.cfg -o $@ $< $(PRI_OBJS)
 
 clean:
-	rm -f $(OBJ_F000) $(OBJ_D000) $(BIN_F000) $(BIN_D000) $(OBJ_6504) $(BIN_6504)
+	rm -f $(BUILD_DIR)/*
 
+# Include phony targets
 .PHONY: all clean
+
+# Mark object files as precious to prevent automatic deletion
+.PRECIOUS: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_%.o
+
+# Individual variant targets for convenience
+f000: $(BUILD_DIR)/ieee_diag_f000.bin
+d000: $(BUILD_DIR)/ieee_diag_d000.bin

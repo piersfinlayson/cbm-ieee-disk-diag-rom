@@ -9,6 +9,7 @@
     - 2 - Provides detailed information about the test status, including any failed chips that were identified
     - 14 - Provides version and other information about the ROM
     - 15 - Provides Commodore-style disk status string of the format EN,EM$,ET,ES
+- Substantial source code reorganization
 
 ## 0.1.4
 

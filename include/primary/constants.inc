@@ -1,10 +1,10 @@
-; This file contains constants for the 6502 
-;
+; This file contains constants for the primary processor.
+
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
-.if .not .defined(CPU_6502)
+.if .not .defined(PRIMARY_CPU)
     .error "This file is only used by the 6502"
 .endif
 
@@ -37,10 +37,6 @@ ALL_LEDS = ERR_LED | DR0_LED | DR1_LED
 ERR_AND_0_LED = ERR_LED | DR0_LED
 ERR_AND_1_LED = ERR_LED | DR1_LED
 DR01_LEDS = DR0_LED | DR1_LED
-
-; Magic byte at the start of the diagnostics ROM (located at $D000), which is
-; tested by the stock ROMs, to see if the diagnostics ROM is present.
-DIAG_START_BYTE = $55
 
 ; Bit masks for TESTS_6502 zero page variable.  The bits are in this order, as
 ; this is the order finished: goes through them reporting any errors and other

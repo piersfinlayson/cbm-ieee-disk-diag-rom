@@ -1,15 +1,13 @@
 ; This file contains routines that will be dynamically loaded to the 6504
-; processor at runtime.  The compiled binary is included in the main
+; processor at runtime.  The compiled binary is included in the primary main
 ; diagnostics assembly file.
-;
+
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
-;
-; See [README.md] for build and usage instructions.
 
-CPU_6504 = 1
-.include "shared.inc"
+; Includes
+.include "include/shared.inc"
 
 ; Locations of registers
 VIA_PBD = $40
@@ -18,9 +16,6 @@ VIA_ACR = $4B
 VIA_PCR = $4C
 VIA_IER = $4E
 RRIOT_PBDDR = $83
-
-; Zero page usage
-ZP_DRIVE = $00
 
 .segment "CODE"
 control:

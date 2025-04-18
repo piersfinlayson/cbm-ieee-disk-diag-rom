@@ -1,18 +1,19 @@
-; This file contains constants shared between the 6504 and 6502 code
-;
+; This file contains constants shared between the primary and secondary
+; processors implementations.
+
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
-.if .not .defined(CPU_6502)
-    .if .not .defined(CPU_6504)
-        .error "Must define either CPU_6502 or CPU_6504"
+.if .not .defined(PRIMARY_CPU)
+    .if .not .defined(SECONDARY_CPU)
+        .error "Must define either PRIMARY_CPU or SECONDARY_CPU"
     .endif
 .endif
 
 SHARED_RAM_6502_START = $1000
 SHARED_RAM_6504_START = $400
-.ifdef CPU_6502
+.ifdef PRIMARY_CPU
 SHARED_RAM_START = SHARED_RAM_6502_START
 .else
 SHARED_RAM_START = SHARED_RAM_6504_START
@@ -25,7 +26,7 @@ JOB_0_SLOT = SHARED_RAM_START + $03
 
 ; Value the 1st bank of static RAM is mapped to on the 6504 relative to the
 ; 6504.
-.ifdef CPU_6504
+.ifdef SECONDARY_CPU
 RAM_BANK_1_OFFSET = ($1000 - $400)
 .endif
 
@@ -50,7 +51,7 @@ CMD_RESULT = SHARED_RAM_START + $F4
 CMD_RESULT_CMD = SHARED_RAM_START + $F5
 
 
-.ifdef CPU_6502
+.ifdef PRIMARY_CPU
 ; Used for the IEEE command buffer.
 ; We chose $1200 as in the first bank of RAM, which we know is good if we get
 ; to IEEE handling - as we would have errored out earlier otherwise.
@@ -86,7 +87,7 @@ STATUS_6504_RUNNING = $01
 STATUS_6504_TESTING_DRIVE = $02
 STATUS_6504_RESETTING = $FF
 
-.ifdef CPU_6502
+.ifdef PRIMARY_CPU
 ; 6502/6504 shared job of type execute.  Must be ORed with $80 to indicate to
 ; the 6504, running stock ROM code, that it should execute our code.  This
 ; comes from the 6504 ROM (901466).
@@ -94,13 +95,13 @@ JOB_EXEC = $60
 JOB_BUMP = $40
 .endif
 
-.ifdef CPU_6502
+.ifdef PRIMARY_CPU
 ; Constants indicating where the code to be copied to the shared RAM to control
 ; the 6504 is located in this ROM.
 .ifdef F000_BUILD
-  CODE_6504_START = $FF00
+  SECONDARY_CODE_START = $FF00
 .else
-  CODE_6504_START = $DF00
+  SECONDARY_CODE_START = $DF00
 .endif
 .endif
 
