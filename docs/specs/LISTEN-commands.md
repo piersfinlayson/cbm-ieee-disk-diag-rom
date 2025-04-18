@@ -28,6 +28,8 @@ In order to test whether the drive's IEEE-488 bus is operational, connect to the
 
 All commands are 1 character LISTEN commands, received on channel 15.
 
+Any multi character commands, those received on other channels, or those (other than `A`) received whil in flash code mode are ignored.  In command-mode the error is reported by lighting the ERR LED solidly.  In either command mode or flash code mode, the status queryable via channel 15 is updated to reflect the error.
+
 Proposed command set:
 
 | Command | Description |
@@ -35,16 +37,16 @@ Proposed command set:
 | A      | Enter command mode |
 | 0      | Select drive 0 (default) |
 | 1      | Select drive 1 |
-| B      | Bump selected drive |
+| B      | Bump selected drive head against track 0|
 | E      | Move to track 35 |
 | M      | Motor on |
 | N      | Motor off |
 | H      | Set half track increment |
 | W      | Set whole track increment |
-| F      | Move forward by current increment |
-| R      | Move reverse by current increment |
-| Z      | Reboot entire drive |
-| X      | Exit to flash code loop |
+| F      | Move head forward (to a higher track) by current increment |
+| R      | Move head reverse (to a lower track) by current increment |
+| Z      | [Reboot entire drive](#reboot) |
+| X      | Exit to command mode to flash code loop |
 
 The diagnostics ROM pauses handling IEEE-488 commands until the previous command has been executed.
 
@@ -66,3 +68,15 @@ When in command mode, one or both of the drive is lit solidly.
 - Drive 1 LED lit solid - drive 1 selected
 
 If an error occurs, the ERR LED is lit solidly until the error is queried via [TALK on channel 15]((../../README.md#last-operation-status)).
+
+## Implementation Notes
+
+### Entering/Exiting command mode
+
+Entering the command mode is done by the interrupt handler reseting the stack, and then pushing the command mode routine's address onto the stack, followed by the CPU's register state (bit 5 is set high - so `$20`).  When the interrupt handler returns, using `RTI`, the CPU will jump to the command mode routine.
+
+Similarly to exit command mode, the interrupt resets the stack with the `finished` routine's address, and the CPU's register state is again set to `$20`.
+
+### Rebooting
+
+Reboot is handled as above by jumping to the ROM's reset vector.  The 6504 is instructed to reset prior to the 6502 resetting.  This means that the 6504 resets prior to the 6502.  Care is taken within the 6502 code not to touch the shared RAM once the 6504 has been instructed to reset, as doing so might overwrite initial state written by the newly booted 6504.   
