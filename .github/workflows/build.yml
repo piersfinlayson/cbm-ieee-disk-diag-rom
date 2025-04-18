@@ -25,4 +25,4 @@ jobs:
       with:
         name: diagnostic-rom
         path: |
-          *.bin
+          build/*.bin

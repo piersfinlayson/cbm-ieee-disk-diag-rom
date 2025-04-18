@@ -73,5 +73,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            diag_x040_f000.bin
-            diag_x040_d000.bin
+            build/ieee_diag_f000.bin
+            build/ieee_diag_d000.bin
