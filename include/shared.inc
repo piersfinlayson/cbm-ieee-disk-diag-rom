@@ -75,6 +75,10 @@ CMD_TEST_DRIVE = $01
 ; These commands instruct the 6504 control routine to reset the 6504 - this
 ; jumps to the reset vector.
 CMD_RESET = 'Z'
+CMD_DR0 = '0'
+CMD_DR1 = '1'
+CMD_MOTOR_ON = 'M'
+CMD_MOTOR_OFF = 'N'
 
 ; These are the supported status values the 6504 routine may return.
 STATUS_6504_NONE = $00

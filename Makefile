@@ -40,6 +40,10 @@ $(SEC_CONTROL_OBJ): $(SEC_CONTROL_SRC)
 $(SEC_CONTROL_BIN): $(SEC_CONTROL_OBJ)
 	ld65 -t none -o $@ $(SEC_CONTROL_OBJ)
 
+# Explicit pattern for pri_secondary, to ensure it is built with the secondary CPU bin file
+$(BUILD_DIR)/pri_secondary.o: $(PRI_SRC_DIR)/secondary.s $(SEC_CONTROL_BIN)
+	ca65 $(CA65_OPTS_PRI) $< -o $@
+
 # Pattern rule for primary CPU components
 $(BUILD_DIR)/pri_%.o: $(PRI_SRC_DIR)/%.s
 	ca65 $(CA65_OPTS_PRI) $< -o $@

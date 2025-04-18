@@ -1588,22 +1588,52 @@ process_command_byte:
     LDX #$00            ; Clear command before leaving the interrupt handler
     STX IEEE_CMD_BUF
     RTI
+
+; Main command loop, not running in interrupt handler.  Handles any outstanding
+; commands in IEEE_CMD_BUF.
 command_loop:
-    LDA #$00            ; Set active drive to 0
-    STA CMD_LOOP_DRIVE
-@loop:
-    LDA CMD_LOOP_DRIVE
-    BEQ @drive_0
-    LDA #DR1_LED
-    BNE @set_led
-@drive_0:
     LDA #DR0_LED
-@set_led:
-    STA RIOT_UE1_PBD    ; Set LED pattern to both drive LEDs
+    BEQ @set_leds
+@loop:
+    LDA IEEE_CMD_BUF
 
-    ; Process IEEE_CMD_BUF here
+    BEQ @loop           ; No command to process, loop
 
-    JMP @loop
+    ; Handle drive 0/1 commands separately
+    CMP #CMD_DR0
+    BEQ @drive_0
+    CMP #CMD_DR1
+    BEQ @drive_0
+
+@process_cmd:
+    ; Handle all other commands (including drives - they branch back to here)
+    ; by sending over to the second processor
+    LDX #$00
+    STX CMD_RESULT
+    STX CMD_RESULT_CMD
+    STA CMD2
+    STA CMD1
+    BNE @loop          ; Should always be non-zero!
+
+@drive_0:
+    PHA
+    LDA #DR0_LED
+    .assert DR0_LED <> 0, error, "DR0_LED = 0"
+    BNE @set_leds
+
+@drive_1:
+    PHA
+    LDA #DR1_LED
+    .assert DR1_LED <> 0, error, "DR1_LED = 0"
+    
+    ; Fall through to set_leds
+
+@set_leds:
+    STA CMD_LOOP_LED
+    LDA CMD_LOOP_LED
+    STA RIOT_UE1_PBD    ; Set LED pattern to drive 0 LED
+    PLA
+    BNE @process_cmd    ; Should always be non-zero!
 
 ; "Routine" which jumps to an indirect address.  This is in place of being
 ; to JSR to an indirect address, which the 6502 doesn't support.  Only actual

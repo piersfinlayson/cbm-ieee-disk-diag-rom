@@ -17,6 +17,15 @@ VIA_PCR = $4C
 VIA_IER = $4E
 RRIOT_PBDDR = $83
 
+MOTOR_PORTS = VIA_PBD
+
+ZP_MOTOR_MASK_OFF = $00
+ZP_MOTOR_MASK_ON = $01
+
+; Byte 0 = Drive 0, Byte 1 = Drive 1.  1 off, 0 on
+MOTOR_MASK:
+    .byte $20, $10
+
 .segment "CODE"
 control:
     CLD                     ; Clear decimal mode
@@ -40,10 +49,16 @@ control:
     ; might change the shared RAM under the feet of the RAM test.
     LDA #STATUS_6504_RUNNING ; Set status to running
     STA STATUS_6504
+    .assert STATUS_6504_RUNNING <> 0, error, "STATUS_6504_RUNNING must not be 0"
+    BNE @main_loop
 
 ; Main loop, which checks whether to run a command
+@main_loop_ok:
+    LDX #$00
+    STX CMD1                ; Reset both command bytes
+    STX CMD2
+    STX CMD_RESULT          ; Store result of command
 @main_loop:
-
     ; Check whether CMD1 is set to a valid command
     LDA CMD1
     .assert CMD_NONE = 0, error, "CMD_NONE must be 0 for branching to work correctly"
@@ -57,7 +72,44 @@ control:
     AND #$DF                ; Force to uppercase
     CMP #CMD_RESET
     BEQ @reset
+    CMP #CMD_DR0
+    BEQ @drive0
+    CMP #CMD_DR1
+    BEQ @drive1
+    CMP #CMD_MOTOR_ON
+    BEQ @motor_on
+    CMP #CMD_MOTOR_OFF
+    BEQ @motor_off
     BNE @main_loop          ; If not, loop back and check CMD1 again
+
+@drive0:
+    LDX #$00
+    BEQ @drive_common
+@drive1:
+    LDX #$01
+@drive_common:
+    STA CMD_RESULT_CMD      ; Set the command result to the command before
+                            ; we lose it
+    LDA MOTOR_MASK, X       ; Load the appropriate motor mask
+    STA ZP_MOTOR_MASK_OFF   ; Store it in the zero page
+    EOR #$FF                ; Invert the mask
+    STA ZP_MOTOR_MASK_ON    ; Store it in the zero page
+    BNE @main_loop_ok       ; We're done - A is not 0
+
+@motor_on:
+    STA CMD_RESULT_CMD      ; Set the command result to the command before
+                            ; we lose it
+    LDA MOTOR_PORTS         ; Load current value of motor ports
+    AND ZP_MOTOR_MASK_ON    ; Mask out the motors that should be on (0 is on)
+    JMP @motor_common
+@motor_off:
+    STA CMD_RESULT_CMD      ; Set the command result to the command before
+                            ; we lose it
+    LDA MOTOR_PORTS         ; Load current value of motor ports
+    ORA ZP_MOTOR_MASK_OFF   ; Set the motors that should be off (1 is off)
+@motor_common:
+    STA MOTOR_PORTS         ; Store it back
+    JMP @main_loop_ok       ; We're done - A may or may not be 0
 
 @reset:
     LDA #STATUS_6504_RESETTING   ; Set status to resetting

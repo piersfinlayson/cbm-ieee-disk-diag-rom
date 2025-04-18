@@ -62,6 +62,24 @@
 ;===============================================================================
 
 ;===============================================================================
+; SPINDLE MOTOR CONTROL SYSTEM
+;===============================================================================
+; The spindle motor control manages when disk motors are turned on/off and 
+; tracks their speed status. It implements power-saving by only running motors
+; when needed and includes proper spin-up delay timing for reliable operation.
+;
+; KEY COMPONENTS:
+; -------------
+; 1. Motor control bits (VIA port B) - physical on/off control
+; 2. Drive status table (DRVST) - tracks motor status for each drive
+; 3. Motor timing table (MTRTM) - target time for motor spin-up completion
+; 4. Clock counter - system timer for all timing operations
+; 5. Delay constant - configured spin-up time (50 timer ticks)
+;
+; The system uses a combination of immediate control and interrupt-driven
+; status management to coordinate motor operations with disk access tasks.
+
+;===============================================================================
 ; FIRST JOB EXECUTION SEQUENCE (COLD START) - EXECUTE job
 ;===============================================================================
 ; Sequence when job 0 is the first job received with MSB set as an EXECUTE job:
@@ -166,7 +184,10 @@
  FC0F  86 1B                STX IP        ; Set internal pointer to $FF
  FC11  A9 FC                LDA #$FC      ; Pattern: %11111100
  FC13  85 4C                STA VIA_PCR   ; Configure VIA peripheral control register
- FC15  86 40                STX VIA_VB    ; Set all VIA port B lines high (motors OFF)
+
+ ; MOTOR INITIALIZATION
+ FC15  86 40                STX VIA_VB     ; Set all VIA port B lines high (motors OFF)
+                                          ; This initializes both motors to off state
  
  ; INTERRUPT AND TIMER SETUP
  FC17  A9 92                LDA #$92      ; Pattern: %10010010 (enable specific interrupts)
@@ -193,14 +214,17 @@
  FC33  8D 00 04             STA TICK      ; Initialize system tick counter
  FC36  85 8F                STA x8F       ; Set controller status byte
  
- ; INITIALIZE DRIVE STATUS
- FC38  A9 80                LDA #$80      ; Pattern: %10000000 (motor "ready" bit)
- FC3A  85 03                STA DRVST     ; Initialize drive 0 status 
- FC3C  85 04                STA DRVST+1   ; Initialize drive 1 status
+ ; DRIVE STATUS INITIALIZATION
+ FC38  A9 80                LDA #$80       ; Pattern: %10000000 (motor "ready" bit)
+ FC3A  85 03                STA DRVST      ; Initialize drive 0 status (motor logically ready) 
+ FC3C  85 04                STA DRVST+1    ; Initialize drive 1 status (motor logically ready)
+                                          ; Unusually, the "motor ready" bit is set at startup
+                                          ; even though the motors are physically off
  
- ; SYSTEM TIMING PARAMETERS
- FC3E  A9 32                LDA #$32      ; Value 50 (decimal)
- FC40  8D 01 04             STA DELAY     ; Set motor spin-up delay time
+ ; SPIN-UP DELAY CONFIGURATION
+ FC3E  A9 32                LDA #$32       ; Value 50 (decimal)
+ FC40  8D 01 04             STA DELAY      ; Set motor spin-up delay time
+                                          ; This is the time allowed for motor to reach speed
  
  ; BUFFER POINTERS
  FC43  A9 04                LDA #$04      ; Value 4 (page number)
@@ -223,16 +247,25 @@
 ;===============================================================================
 ; MOTOR CONTROL SEQUENCE
 ;===============================================================================
-; Turn on motor if not already running and set up spin-up delay
+ ; MOTOR ACTIVATION CHECK
  FC55  A5 40                LDA VIA_VB     ; Get current motor control bits
  FC57  3D ED FF             AND ANDC,X     ; Test if motor is already on for this drive
+                                          ; ANDC+0=$20 (drive 0), ANDC+1=$10 (drive 1)
  FC5A  F0 0E                BEQ iFC6A      ; If motor already on, skip to next check
+ 
+ ; MOTOR ACTIVATION SEQUENCE
  FC5C  A5 40                LDA VIA_VB     ; Reload motor control bits
  FC5E  5D EF FF             EOR ANDE,X     ; Toggle motor bit for this drive
+                                          ; ANDE+0=$A0 (drive 0), ANDE+1=$50 (drive 1)
  FC61  85 40                STA VIA_VB     ; Update hardware motor control
+                                          ; This physically turns on the motor
+ 
+ ; SPIN-UP TIMING SETUP
  FC63  A5 00                LDA CLOCK      ; Get current system time
- FC65  6D 01 04             ADC DELAY      ; Add motor spin-up delay value
- FC68  95 01                STA MTRTM,X    ; Store target time when motor should be up to speed
+ FC65  6D 01 04             ADC DELAY      ; Add motor spin-up delay (50 ticks)
+ FC68  95 01                STA MTRTM,X    ; Store target ready time in motor timing table
+                                          ; System will wait until this time before
+                                          ; considering the motor up to speed
 
 ;===============================================================================
 ; DRIVE STATUS CHECK
@@ -240,10 +273,17 @@
 ; Checks if the motor is at speed, and if the head is stationary
 ; before proceeding to job selection
 
+ ; DRIVE STATUS CHECK
  FC6A  B5 03     iFC6A      LDA DRVST,X    ; Get drive status byte for current drive
- FC6C  30 06                BMI iFC74      ; If bit 7 set (motor at speed), skip ahead
+ FC6C  30 06                BMI iFC74      ; If bit 7 set (motor logically ready), skip ahead
+                                          ; On first job after boot, this branch is taken
+                                          ; because bit 7 was set during initialization
+ 
+ ; UPDATE SPIN-UP TARGET
  FC6E  A5 00                LDA CLOCK      ; Get current system time
- FC70  95 01                STA MTRTM,X    ; Update motor spin-up target time
+ FC70  95 01                STA MTRTM,X    ; Reset motor spin-up target time
+                                          ; This extends the delay if motor not ready
+
  FC72  B5 03                LDA DRVST,X    ; Reload drive status
  FC74  0A        iFC74      ASL            ; Shift left to check bit 6 (head moving flag)
  FC75  10 05                BPL QUE        ; If bit 6 clear (head NOT moving), go to QUE
@@ -405,29 +445,82 @@
  FD13  6C 16 00             JMP (BUFPT)    ; Jump indirect to address in BUFPT
                                           ; This implements a function dispatch table
 
+;===============================================================================
 ; BUMP (RECALIBRATION) ROUTINE
-; This routine resets the head position by moving it to track 0
-; using the physical "bump stop" as a reference point
+;===============================================================================
+; This routine resets the read/write head position by moving it outward until it
+; physically hits the track 0 stop (the "bump"). This mechanical recalibration 
+; is necessary to ensure the controller's logical track position matches the 
+; actual physical position, especially after potential positioning errors.
+;
+; OPERATION SEQUENCE:
+; ------------------
+; 1. The routine is invoked when a job of type $40 is dispatched
+; 2. Sets up the drive state with appropriate flags for recalibration
+; 3. Configures the stepper motor control lines for outward movement
+; 4. Sets a large step count to ensure head reaches physical limit
+; 5. Transfers control to the interrupt-driven stepping system
+; 6. The IRQ handler decrements/increments the step counter with each pulse
+; 7. When complete, the drive state is updated to indicate track 0 position
+;
+; HARDWARE INTERACTION:
+; -------------------
+; - Uses the VIA port B for stepper motor phase control
+; - Sets stepper motor into continuous stepping mode toward track 0
+; - Relies on physical stop to halt movement when track 0 is reached
+; - Step count is set high enough to guarantee reaching physical limit
 
  FD16  78        BUMP       SEI            ; Disable interrupts during critical stepper operation
- FD17  A9 C1                LDA #$C1       ; Set drive state flags:
-                                          ; Bit 7 = 1: Drive busy
-                                          ; Bit 6 = 1: In recalibration mode
-                                          ; Bit 0 = 1: Initial stepper motor phase
- FD19  A6 12                LDX DRIVE      ; Load current drive number
- FD1B  95 03                STA DRVST,X    ; Update drive state
+                                          ; This ensures atomic access to hardware registers
  
- ; CONFIGURE STEPPER MOTOR CONTROL
- FD1D  A9 0F                LDA #$0F       ; Stepper motor phase mask (%00001111)
- FD1F  3D EF FF             AND ANDD,X     ; AND with drive-specific mask from table
- FD22  05 40                ORA VIA_VB     ; Combine with current VIA port settings
- FD24  85 40                STA VIA_VB     ; Update stepper motor control register
+ FD17  A9 C1                LDA #$C1       ; Configure drive state flags:
+                                          ; Bit 7 = 1: Drive busy during recalibration
+                                          ; Bit 6 = 1: Head is in stepping/movement mode
+                                          ; Bit 0 = 1: Set initial stepper motor phase
  
- ; SET MAXIMUM STEP COUNT
- FD26  A9 8C                LDA #$8C       ; Load 140 (256-116) as step count
-                                          ; This large value ensures head hits physical stop
- FD28  95 05                STA STEPS,X    ; Store in step counter for this drive
+ FD19  A6 12                LDX DRIVE      ; Load current drive number (0 or 1)
+                                          ; This allows operation on either drive in dual-drive systems
+ 
+ FD1B  95 03                STA DRVST,X    ; Update drive state table for the selected drive
+                                          ; DRVST+0 for drive 0, DRVST+1 for drive 1
+ 
+ ; STEPPER MOTOR PHASE INITIALIZATION
+ ; ----------------------------------
+ ; The stepper motor is controlled by a sequence of 4 phases that must be
+ ; energized in the correct order to move the head. This section sets up
+ ; the initial phase pattern for outward movement.
+ 
+ FD1D  A9 0F                LDA #$0F       ; Load stepper phase mask (%00001111)
+                                          ; All four stepper phases are masked for access
+ 
+ FD1F  3D EF FF             AND ANDD,X     ; AND with drive-specific mask from lookup table
+                                          ; ANDD+0 = $0C (drive 0), ANDD+1 = $03 (drive 1)
+                                          ; This isolates the phase bits for the selected drive
+ 
+ FD22  05 40                ORA VIA_VB     ; Combine with current VIA port B settings
+                                          ; Preserves non-stepper bits while setting phase bits
+ 
+ FD24  85 40                STA VIA_VB     ; Update VIA port B hardware register
+                                          ; This immediately changes stepper motor energization
+ 
+ ; STEP COUNTER INITIALIZATION
+ ; --------------------------
+ ; The step counter is used by the interrupt routine to keep track of 
+ ; how many steps have been taken. For bump operations, we set this to
+ ; a high value to ensure the head reaches the physical track 0 stop.
+ 
+ FD26  A9 8C                LDA #$8C       ; Load step counter with 140 (256-116)
+                                          ; This large negative value ensures head will move
+                                          ; outward until it hits the track 0 physical stop
+                                          ; Even from the innermost track (~35), this is more
+                                          ; than enough steps to reach track 0
+ 
+ FD28  95 05                STA STEPS,X    ; Store step count in step counter for this drive
+                                          ; The IRQ handler will use this to control stepping
+ 
  FD2A  4C C1 FE             JMP DONE       ; Jump to completion routine
+                                          ; This marks the job as successful (code $01)
+                                          ; and returns to the main job processing loop
 
  FD2D  A9 FF     WSECT      LDA #$FF       ; decide which sector to service
  FD2F  85 1A                STA FTNUM     
@@ -778,60 +871,131 @@
  FF82  24 41                BIT VIA_DIN   
  FF84  60                   RTS           
 
-; CPU interrupt routine
+;===============================================================================
+; INTERRUPT-DRIVEN HEAD POSITIONING SYSTEM
+;===============================================================================
+; This sophisticated IRQ handler orchestrates all head movement operations
+; including the BUMP recalibration process. It runs on each timer interrupt,
+; incrementing the system clock and managing stepper motor phases to create
+; smooth, timed head movements.
+;
+; For BUMP operations, this handler generates the sequence of stepper motor
+; phase changes needed to move the head outward until it physically reaches
+; the track 0 stop position.
 
- FF85  48        IRQ        PHA           
- FF86  8A                   TXA           
- FF87  48                   PHA           
- FF88  AD 00 04             LDA TICK      
- FF8B  85 8F                STA x8F       
- FF8D  E6 00                INC CLOCK     
- FF8F  A2 01                LDX #$01      
- FF91  A5 00     iFF91      LDA CLOCK     
- FF93  D5 01                CMP MTRTM,X   
- FF95  D0 16                BNE iFFAD     
- FF97  BD ED FF             LDA ANDC,X    
- FF9A  16 03                ASL DRVST,X   
- FF9C  24 40                BIT VIA_VB    
- FF9E  B0 08                BCS iFFA8     
- FFA0  38                   SEC           
- FFA1  BD F1 FF             LDA ANDE,X    
- FFA4  45 40                EOR VIA_VB    
- FFA6  85 40                STA VIA_VB    
- FFA8  D0 01     iFFA8      BNE iFFAB     
- FFAA  18                   CLC           
- FFAB  76 03     iFFAB      ROR DRVST,X   
- FFAD  B5 05     iFFAD      LDA STEPS,X   
- FFAF  D0 09                BNE L911      
- FFB1  B5 03                LDA DRVST,X   
- FFB3  29 BF                AND #$BF      
- FFB5  95 03                STA DRVST,X   
- FFB7  4C E4 FF             JMP iFFE4     
- FFBA  0A        L911       ASL           
- FFBB  A5 40                LDA VIA_VB    
- FFBD  3D D4 FC             AND ANDA,X    
- FFC0  85 07                STA COW       
- FFC2  A5 40                LDA VIA_VB    
- FFC4  3D EF FF             AND ANDD,X    
- FFC7  B0 07     ERR1       BCS iFFD0      ; send job status, make motor stay longer, check job type
- FFC9  D6 05                DEC STEPS,X    ; step in (+)
- FFCB  7D EB FF             ADC ANDB,X    
- FFCE  D0 05                BNE iFFD5     
- FFD0  F6 05     iFFD0      INC STEPS,X    ; step out (-)
- FFD2  FD EB FF             SBC ANDB,X    
- FFD5  ED EF FF  iFFD5      SBC ANDD      
- FFD8  05 07                ORA COW        ; store new stepper position, test if DRVTST ready
- FFDA  85 40                STA VIA_VB    
- FFDC  B5 03                LDA DRVST,X   
- FFDE  30 04                BMI iFFE4     
- FFE0  A5 00                LDA CLOCK     
- FFE2  95 01                STA MTRTM,X   
- FFE4  CA        iFFE4      DEX           
- FFE5  10 AA                BPL iFF91     
- FFE7  68                   PLA            ; pop the stack of a and x and RTI
- FFE8  AA                   TAX           
- FFE9  68                   PLA           
- FFEA  40                   RTI           
+ FF85  48        IRQ        PHA            ; Save accumulator on stack
+ FF86  8A                   TXA            ; Transfer X to A
+ FF87  48                   PHA            ; Save X register on stack
+ FF88  AD 00 04             LDA TICK       ; Load the tick counter value
+ FF8B  85 8F                STA x8F        ; Update controller status byte
+ FF8D  E6 00                INC CLOCK      ; Increment the system clock
+                                          ; This is the primary timer for all operations
+
+ ; DRIVE PROCESSING LOOP
+ ; --------------------
+ ; The IRQ handler processes both drives, starting with drive 1
+ 
+ FF8F  A2 01                LDX #$01       ; Start with drive 1
+ 
+ ; MOTOR TIMING CHECK
+ FF91  A5 00     iFF91      LDA CLOCK      ; Get current clock value
+ FF93  D5 01                CMP MTRTM,X    ; Compare with motor target time
+ FF95  D0 16                BNE iFFAD      ; If not matching, skip motor processing
+
+ ; MOTOR STATUS UPDATE
+ FF97  BD ED FF             LDA ANDC,X     ; Load motor test mask 
+ FF9A  16 03                ASL DRVST,X    ; Shift drive status left (bit 7→carry)
+ FF9C  24 40                BIT VIA_VB     ; Test motor bit against VIA port
+ FF9E  B0 08                BCS iFFA8      ; If motor was ready (bit 7 was set), skip ahead
+ 
+ ; TOGGLE MOTOR STATE
+ FFA0  38                   SEC            ; Set carry flag (mark motor as ready)
+ FFA1  BD F1 FF             LDA ANDE,X     ; Load motor toggle mask
+ FFA4  45 40                EOR VIA_VB     ; Toggle motor control bit
+ FFA6  85 40                STA VIA_VB     ; Update hardware control register
+ 
+ ; FINALIZE STATUS UPDATE
+ FFA8  D0 01     iFFA8      BNE iFFAB      ; Always branch to next instruction
+ FFAA  18                   CLC            ; (Unreachable) Clear carry flag
+ FFAB  76 03     iFFAB      ROR DRVST,X    ; Rotate drive status right (carry→bit 7)
+                                          ; This stores motor ready state in bit 7
+                                          
+ ; MOTOR CONTROL SECTION (not directly relevant to BUMP processing)
+ ; This section at $FF97-$FFAB manages motor startup/shutdown
+
+ ; HEAD POSITIONING SECTION
+ ; -----------------------
+ ; This is the critical code that processes step requests
+ ; and controls the stepper motor during BUMP operations
+ 
+ FFAD  B5 05     iFFAD      LDA STEPS,X    ; Check step counter for this drive
+ FFAF  D0 09                BNE L911       ; If steps remaining, go to step handler
+ 
+ ; STEP COMPLETION
+ ; When step counter reaches zero, head movement is complete
+ 
+ FFB1  B5 03                LDA DRVST,X    ; Load drive status
+ FFB3  29 BF                AND #$BF       ; Clear bit 6 (head movement flag)
+ FFB5  95 03                STA DRVST,X    ; Update drive status - head movement complete
+ FFB7  4C E4 FF             JMP iFFE4      ; Skip to next drive processing
+ 
+ ; STEP PROCESSING
+ ; --------------
+ ; This section handles the actual phase changes for the stepper motor
+ 
+ FFBA  0A        L911       ASL            ; Shift step counter left (check sign bit)
+                                          ; For BUMP operations, STEPS=$8C (negative)
+                                          ; so carry will be set after this ASL
+ 
+ ; SAVE CURRENT MOTOR STATE
+ FFBB  A5 40                LDA VIA_VB     ; Get current motor control bits
+ FFBD  3D D4 FC             AND ANDA,X     ; Mask out stepper bits for this drive
+ FFC0  85 07                STA COW        ; Save non-stepper bits in temporary variable
+ 
+ ; GET CURRENT STEPPER PHASE BITS
+ FFC2  A5 40                LDA VIA_VB     ; Get VIA port value again
+ FFC4  3D EF FF             AND ANDD,X     ; Mask to isolate stepper phase bits
+                                          ; ANDD+0=$0C, ANDD+1=$03 (based on drive)
+ 
+ ; DETERMINE STEP DIRECTION AND UPDATE PHASE
+ FFC7  B0 07     ERR1       BCS iFFD0      ; If carry set (negative STEPS), branch to step out
+                                          ; For BUMP operations, this branch is always taken
+ 
+ ; STEP IN LOGIC (toward higher track numbers) - NOT used during BUMP
+ FFC9  D6 05                DEC STEPS,X    ; Decrement step counter
+ FFCB  7D EB FF             ADC ANDB,X     ; Adjust phase for inward movement
+ FFCE  D0 05                BNE iFFD5      ; Branch to phase update
+ 
+ ; STEP OUT LOGIC (toward track 0) - Used during BUMP
+ FFD0  F6 05     iFFD0      INC STEPS,X    ; Increment step counter
+                                          ; During BUMP, this moves counter from negative
+                                          ; toward zero, tracking our progress to track 0
+ 
+ FFD2  FD EB FF             SBC ANBB,X     ; Adjust phase for outward movement
+                                          ; This rotates the stepper motor phase pattern
+                                          ; ANDB+0=$04, ANDB+1=$01 (based on drive)
+ 
+ ; UPDATE HARDWARE REGISTERS WITH NEW PHASE
+ FFD5  ED EF FF  iFFD5      SBC ANDD       ; Complete phase calculation
+ FFD8  05 07                ORA COW        ; Combine with saved non-stepper bits
+ FFDA  85 40                STA VIA_VB     ; Update VIA port to change physical stepper phase
+                                          ; This causes the actual physical head movement
+ 
+ ; DRIVE STATUS UPDATE
+ FFDC  B5 03                LDA DRVST,X    ; Get drive status
+ FFDE  30 04                BMI iFFE4      ; If bit 7 set (motor at speed), skip ahead
+ FFE0  A5 00                LDA CLOCK      ; Otherwise get current clock value
+ FFE2  95 01                STA MTRTM,X    ; Update motor timing target
+ 
+ ; DRIVE LOOP CONTROL
+ FFE4  CA        iFFE4      DEX            ; Move to next drive (drive 0)
+ FFE5  10 AA                BPL iFF91      ; If not negative, process next drive
+ 
+ ; INTERRUPT EXIT
+ FFE7  68                   PLA            ; Restore X register
+ FFE8  AA                   TAX            
+ FFE9  68                   PLA            ; Restore accumulator
+ FFEA  40                   RTI            ; Return from interrupt
 
  FFEB  ANDB       .byte $04, $01                                ;da
  FFED  ANDC       .byte $20, $10                                ; p
