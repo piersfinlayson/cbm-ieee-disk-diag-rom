@@ -84,11 +84,11 @@ To avoid damage to your drive follow these precautions:
 
 ### ❓Which ROM file should I use for my drive?
 
-By default, use `diag_x040_f000.bin` in socket UH1.
+By default, use `ieee_diag_f000.bin` in socket UH1.
 
-- `diag_x040_f000.bin`, socket UH1 - for testing DOS 2 drives and those  where you suspect one or more of the stock ROMs are faulty
+- `ieee_diag_f000.bin`, socket UH1 - for testing DOS 2 drives and those  where you suspect one or more of the stock ROMs are faulty
 
-- `diag_x040_d000.bin`, socket UJ1 - for drives with 2 working DOS 1 ROMS
+- `ieee_diag_d000.bin`, socket UJ1 - for drives with 2 working DOS 1 ROMS
 
 ### ❓Where can I find the ROM images?
 
