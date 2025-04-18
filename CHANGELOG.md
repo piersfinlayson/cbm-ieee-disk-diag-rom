@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.6
+
+Have one byte listens working.
+Have a x and z commands working
+Think I've fixed 6504 immediate reset from control loop - but may have introduced that this time as well.
+
+Haven't tested longer listens
+Haven't added support for other commands (ones that go to 6504)
+Think there's still some flakiness around IEEE-488 interrupt handling - if xum1541 is in bad state it can end up hanging us.
+Haven't dealt with data on other channels yet
+
+- Trimmed down IEEE-488 stack to save some bytes.
+- Improve IEEE-488 LISTEN handling
+
 ## 0.1.5
 
 - IEEE-488 stack added.

@@ -52,11 +52,6 @@ CMD_RESULT_CMD = SHARED_RAM_START + $F5
 
 
 .ifdef PRIMARY_CPU
-; Used for the IEEE command buffer.
-; We chose $1200 as in the first bank of RAM, which we know is good if we get
-; to IEEE handling - as we would have errored out earlier otherwise.
-IEEE_CMD_BUF = $1200
-
 ; Used for string to send.
 ; Again, we chose $1300 as in the first bank of RAM.
 STRING_BUF = $1300

@@ -1,4 +1,4 @@
-; Version strings.
+; Version constants
 
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
@@ -6,4 +6,4 @@
 
 MAJOR_VERSION = $00
 MINOR_VERSION = $01
-PATCH_VERSION = $05
+PATCH_VERSION = $06

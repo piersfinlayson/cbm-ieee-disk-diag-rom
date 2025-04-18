@@ -1147,9 +1147,11 @@ ieee_init:
     LDA RIOT_UE1_PBD
     AND #$07                ; Mask off the bits we don't want
     ORA #$48                ; Create talk address adding 8 and ORing with $40
-    STA TALK_ADDR
-    EOR #$68                ; Create listen address same way
-    STA LISTEN_ADDR
+    STA OUR_TALK_ADDR
+    EOR #$60                ; Create listen address - which should be $2X.
+                            ; This unflips the Talk bit and sets the listen one
+                            ; instead
+    STA OUR_LISTEN_ADDR
 
     ; Enable ATN interrupts
     ; RIOT_UE1_ATNPE is the ATN interrupt enable register positive edge - we
@@ -1204,9 +1206,10 @@ ieee_irq_handler:
     ORA IEEE_CONTROL
     STA IEEE_CONTROL
 
+@dav_wait:
     BIT IEEE_CONTROL
     BVC @atn_get_cmd        ; DAV low - command ready
-    BMI @atn_wait           ; ATN still low
+    BMI @dav_wait           ; ATN still low
     BPL @atn_end            ; ATN went high - end of command sequence
 
 @atn_get_cmd:
@@ -1251,7 +1254,9 @@ ieee_irq_handler:
     
     ; Call listen handler
     JSR listen_handler
-    JMP @atn_exit
+
+    ; Drop through to @check_talk to save a JMP and three 3 bytes.  It'll branch
+    ; to @atn_exit anyway if IEEE_TALK_ACTIVE is not set.
 
 @check_talk:
     LDA IEEE_TALK_ACTIVE
@@ -1266,16 +1271,19 @@ ieee_irq_handler:
     ; Call talk handler
     JSR talk_handler
 
-    LDA #DR01_LEDS
-    STA RIOT_UE1_PBD        ; Set drive 0/1 LEDs on
-
-
-    ; Reset control lines to idle state after talk_handler
+@atn_exit:
+    ; Reset control lines to idle state
     LDA #$07                ; ~DACO, RFDO, ATNA all high
     ORA IEEE_CONTROL
     STA IEEE_CONTROL
 
-@atn_exit:
+    ; Process the command byte if there's one.  We have to do this after
+    ; the previous code to set NDAC and NRFD high again, otherwise stuff will
+    ; hang the next time ATN gets pulled low.  It's possible
+    ; process_listen_byte will not return - if it may reset the stack and cause
+    ; another routine to get called.
+    JSR process_command_byte
+
     ; Restore registers
     PLA
     STA RIOT_UE1_PBD        ; Restore LED state
@@ -1285,22 +1293,16 @@ ieee_irq_handler:
     TAX
     PLA
 
-    BIT IEEE_CONTROL        ; Finally check whether ~ATN has been pulled high
-                            ; (again).  If so, we need to go around this
-                            ; interrupt handler aghain.
-    BMI @again
+    ; Return
     RTI
-
-@again:
-    JMP ieee_irq_handler
 
 @handle_listen:
     LDA IEEE_DATA_BYTE
-    CMP LISTEN_ADDR
+    CMP OUR_LISTEN_ADDR
     BEQ @our_listen         ; Liasten is for our listen address
     CMP #$3F                ; Was this an UNLISTEN?
     BNE @not_addressed      ; Branch if not - it wasn't for us
-    STY IEEE_LISTEN_ACTIVE  ; Clear listen active
+    STY IEEE_LISTEN_ACTIVE  ; Clear listen active - Y set to 0 before this
     BEQ @not_addressed      ; Branch always - as we set Y to 0 before this
     
 @our_listen:
@@ -1308,21 +1310,21 @@ ieee_irq_handler:
     STY IEEE_TALK_ACTIVE    ; Clear talk active
     LDA #$20
     STA IEEE_SEC_ADDR       ; Default secondary address
-    STA IEEE_ORIG_SEC_ADDR
     STA IEEE_ADDRESSED      ; Mark as addressed
     BNE @atn_next           ; Branch always, as A non-zero
 
 @handle_talk:
     STY IEEE_TALK_ACTIVE    ; Clear talk active (Y is set to zero before this)
-
+                            ; This will also clear TALK if an UNTALK comes in
+                            ; as it won't get reset before due to not matching
+                            ; our address.
     LDA IEEE_DATA_BYTE      ; Get our data byte
-    CMP TALK_ADDR           ; Compare with our TALK address
+    CMP OUR_TALK_ADDR           ; Compare with our TALK address
     BNE @not_addressed
     STA IEEE_TALK_ACTIVE    ; Set talk active
     STY IEEE_LISTEN_ACTIVE  ; Clear listen active
     LDA #$20
     STA IEEE_SEC_ADDR       ; Default secondary address
-    STA IEEE_ORIG_SEC_ADDR
     STA IEEE_ADDRESSED      ; Mark as addressed
     BEQ @atn_next           ; Branch always (always Z=1 here)
 
@@ -1330,72 +1332,46 @@ ieee_irq_handler:
     LDA IEEE_ADDRESSED
     BEQ @atn_next           ; Not addressed, ignore
     LDA IEEE_DATA_BYTE
-    STA IEEE_ORIG_SEC_ADDR  ; Store original SA
-    PHA
-    AND #$0F
-    STA IEEE_SEC_ADDR       ; Extract SA bits 0-3
-    PLA
-    AND #$F0                ; Check for close command
-    CMP #$E0                ; Is it close?
-    BNE @atn_next
-    JSR close_channel       ; Handle close command
+    AND #$0F                ; Just store off secondary address bits 0-3
+    STA IEEE_SEC_ADDR       ; Channels 16-31 will appear to us as 0-15
+    JMP @atn_next
     
 @not_addressed:
-    STY IEEE_ADDRESSED      ; Clear addressed flag - also handles untalk
+    STY IEEE_ADDRESSED      ; Clear addressed flag - also handles untalk case
 
 @atn_next:
     BIT IEEE_CONTROL        ; Wait for DAV high
     BVC @atn_next
     JMP @atn_wait           ; Get next command byte
 
-; Close channel implementation
-close_channel:
-    ; Close the channel specified in IEEE_SEC_ADDR
-    ; For diagnostics, you may just clear channel status
-    LDA IEEE_SEC_ADDR
-    CMP #$0F               ; Command channel?
-    BNE @normal_close
-
-    ; Handle command channel close
-    ; For diagnostics you might want to reset command buffer
-    LDA #$00
-    STA IEEE_CMD_BUF_LEN
-    RTS
-
-    ; Handle command channel close
-@normal_close:
-    RTS
-
 ; Handle incoming data as listener
 listen_handler:
     LDA IEEE_SEC_ADDR       ; Check which channel
     CMP #$0F                ; Command channel?
     BEQ @cmd_listen         ; Handle command channel
-    ; Other channels not implemented
+    ; Other channels not implemented - just ignore the data
     RTS
 
 @cmd_listen:
-    ; Receive command into buffer
-    LDX #$00
+    ; Receive command into buffer.  We will only store 1 byte.  It will be the
+    ; last one sent as part of this listen command.
 @cmd_receive_loop:
     JSR receive_byte        ; Get a byte from IEEE bus
-    STA IEEE_CMD_BUF,X      ; Store in command buffer
-    INX
+    BIT IEEE_CONTROL        ; Check ATN and unwind if pulled high
+    BMI @done               ; unwind
+    STA IEEE_CMD_BUF        ; Store in command buffer
     LDA IEEE_EOI_FLAG       ; Check if EOI was set
-    BEQ @cmd_receive_loop   ; If not, get more bytes
-    
-    STX IEEE_CMD_BUF_LEN    ; Store length
-    LDA #$01
-    STA IEEE_CMD_WAITING    ; Set command waiting flag
+    BEQ @cmd_receive_loop   ; If not, get more bytes.  We keep the last one
+                            ; and know if there's one waiting to process by it
+                            ; being non-zero.  (Yes, we could get sent a zero
+                            ; byte, but we don't do anything if so)
+@done:
     RTS
 
 ; Handle outgoing data as talker  
 talk_handler:
-    LDA IEEE_SEC_ADDR       ; Check which channel
-    CMP #$10                ; Channels 0-15?
-    BCC @cmd_talk           ; Handle command channel
-    ; Channels > 15 not supported
-    RTS
+    LDA IEEE_SEC_ADDR       ; Check which channel.  Earlier code restricts to
+                            ; 0-15 so we don't need to check
 
 @cmd_talk:
     ; Get the channel
@@ -1435,7 +1411,7 @@ talk_handler:
     LDA STRING_BUF,X        ; Load from diags message
     BMI @last_byte          ; Last byte has MSB set
     JSR send_byte           ; Send the byte
-    BIT IEEE_CONTROL        ; Check ATN
+    BIT IEEE_CONTROL        ; Check ATN and unwind if pulled high
     BMI @done               ; unwind
 
     INX
@@ -1449,33 +1425,51 @@ talk_handler:
 
 ; Receive a byte from the IEEE bus
 receive_byte:
+    ; Signal not ready for data (NRFD high)
+    LDA #$04                ; NRFD high bit
+    ORA IEEE_CONTROL
+    STA IEEE_CONTROL
+
     ; Wait for DAV low
 @wait_dav_low:
     BIT IEEE_CONTROL
+    BMI @done               ; Unwind if ATN pulled high
     BVS @wait_dav_low
+
+    ; Signal ready for data (NRFD low)
+    LDA #$FB                ; Mask for ~NRFD (NRFD low)
+    AND IEEE_CONTROL
+    STA IEEE_CONTROL
+
+    ; Get EOI status from control port (after setting NRFD low)
+    AND #$20                ; Get EOI
+    STA IEEE_EOI_FLAG       ; Save EOI state
     
     ; Read data
     LDA IEEE_DATA_IN_PORT
     EOR #$FF                ; Invert it
     PHA                     ; Save data byte
     
-    ; Acknowledge with NDAC low (high as inverted)
-    LDA #$02                ; Set NDAC high
-    ORA IEEE_CONTROL
-    STA IEEE_CONTROL
-    
-    ; Signal ready for next byte with NRFD high
-    LDA #$04                ; NRFD high
-    ORA IEEE_CONTROL  
+    ; Signal data accepted (NDAC low)
+    LDA #$FD                ; Mask for ~NDAC (NDAC low)
+    AND IEEE_CONTROL
     STA IEEE_CONTROL
     
     ; Wait for DAV high
 @wait_dav_high:
     BIT IEEE_CONTROL
-    BVC @wait_dav_high
+    BMI @done_pla           ; Unwind if ATN pulled high
+    BVC @wait_dav_high      ; Loop until DAV high (bit 6 = 1)
     
+    ; Signal data not accepted (NDAC high)
+    LDA #$02                ; NDAC high bit
+    ORA IEEE_CONTROL  
+    STA IEEE_CONTROL
+    
+@done_pla:
     ; Retrieve and return data byte
     PLA
+@done:
     RTS
 
 ; Send a byte over the IEEE bus - it's in A
@@ -1524,6 +1518,92 @@ send_byte:
     ORA IEEE_CONTROL
     STA IEEE_CONTROL
     RTS
+
+; Called after we LISTENED for data
+;
+; If the byte was a:
+; - A - enter command mode
+; - X - exit command mode (back to flash mode)
+; - Z - reboot the drive
+; 
+; Otherwise leave for the command mode to process
+process_command_byte:
+    ; Only process a command byte when not in talk and not in listen
+    LDA IEEE_LISTEN_ACTIVE
+    BEQ @continue_check_talk    ; No listen active, continue
+    RTS                 ; Listen active
+@continue_check_talk:
+    LDA IEEE_TALK_ACTIVE
+    BEQ @continue       ; No talk active, continue
+    RTS                 ; Talk active
+@continue:
+    LDA IEEE_CMD_BUF
+    AND #$DF            ; Turn command into upper case ASCII
+    CMP #'A'
+    BEQ @enter_cmd_mode
+    CMP #'X'
+    BEQ @enter_flash_mode
+    CMP #'Z'
+    BEQ @reboot_drive
+    RTS
+@enter_cmd_mode:
+    LDX #$FF            ; Reset the stack
+    TXS
+    LDA #>command_loop  ; Put address of command loop onto stack.  This will
+    PHA                 ; Cause the CPU to call it on RTI.  High byte first.
+    LDA #<command_loop
+    PHA
+    ; Note strictly this assert could happen - in which case we'd have to JMP
+    ; rather than branch - 1/256 chance which the compiler will catch
+    .assert command_loop <> 0, error, "command_loop = 0"
+    BNE @clear_reg
+@enter_flash_mode:
+    LDX #$FF            ; Reset the stack
+    TXS
+    LDA #>flash_loop    ; Put address of flash loop onto stack.  This will
+    PHA                 ; Cause the CPU to call it on RTI.  High byte first.
+    LDA #<flash_loop
+    PHA
+@clear_reg:
+    LDA #$00            ; Reset the CPU registers.  CPU reloads these from
+    PHA                 ; the stack efore calling function pointer on stack.
+    STA IEEE_CMD_BUF    ; Reset the command buffer as well.
+    BEQ @done_clear     ; A is zero, always branches
+@reboot_drive:
+    ; CMD_RESET is defined to be Z so we don't need to load something else and
+    ; cost ourselves and instruction here
+    .assert CMD_RESET = 'Z', error, "CMD_RESET != 'A'"
+    STA CMD2            ; Store command in shared RAM - secondary processor
+    STA CMD1            ; Pick this up and reset
+@wait_secondary:
+    LDX #STATUS_6504_RESETTING  ; Check it has acknowledged
+    JSR wait_6504_status        ; Wait for up to 1 second.  If it resets faster
+                                ; than this, the 6504 processor responded.
+
+    ; No need to reset command buffer in this case as the zero page test will
+    ; clear the whole zero page down
+    
+    JMP (RESET)         ; Reset the primary processor
+@done_clear:
+    LDX #$00            ; Clear command before leaving the interrupt handler
+    STX IEEE_CMD_BUF
+    RTI
+command_loop:
+    LDA #$00            ; Set active drive to 0
+    STA CMD_LOOP_DRIVE
+@loop:
+    LDA CMD_LOOP_DRIVE
+    BEQ @drive_0
+    LDA #DR1_LED
+    BNE @set_led
+@drive_0:
+    LDA #DR0_LED
+@set_led:
+    STA RIOT_UE1_PBD    ; Set LED pattern to both drive LEDs
+
+    ; Process IEEE_CMD_BUF here
+
+    JMP @loop
 
 ; "Routine" which jumps to an indirect address.  This is in place of being
 ; to JSR to an indirect address, which the 6502 doesn't support.  Only actual

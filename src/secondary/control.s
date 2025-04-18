@@ -51,13 +51,13 @@ control:
 
     ; CMD1 isn't CMD_NONE.  Now check it matches CMD2
     CMP CMD2
-    AND #$DF                ; Force to uppercase
     BNE @main_loop          ; If not, loop back and check CMD1 again
 
     ; CMD1 and CMD2 match.  Now check if it's a valid command
     AND #$DF                ; Force to uppercase
     CMP #CMD_RESET
     BEQ @reset
+    BNE @main_loop          ; If not, loop back and check CMD1 again
 
 @reset:
     LDA #STATUS_6504_RESETTING   ; Set status to resetting
