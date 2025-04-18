@@ -15,7 +15,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - 🔍 Identifies precisely which static RAM chip(s) have failed
 - 💡 Visual status indication and failed components via drive LEDs
 - 🆔 Detects and reports the configured hardware device ID (8, 9, etc)
-- 🔌 Reports diagnostic results via IEEE-488 if operational. 
+- 🔌 Reports diagnostic results to computer if IEEE-488 is operational 
 - 🖥️ Tests presence and functioning of secondary CPU, 6504
 - 🔀 Can be run as replacememnt for main ROM or alongside stock DOS 1 ROMs
 

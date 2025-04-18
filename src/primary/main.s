@@ -6,8 +6,10 @@
 ;
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
+; Exports
 .export with_stack_main
 
+; Imports
 .import build_invalid_channel_str
 .import talk_str_table
 .import TALK_STR_TABLE_ENTRY_LEN, TALK_STR_TABLE_LEN
@@ -15,6 +17,7 @@
 .import RamTestLedPattern, RamTestBytePattern
 .import SharedRamOffsets, SharedRamInitValues
 
+; Includes
 .include "include/version.inc"
 .include "include/shared.inc"
 .include "include/macros.inc"
@@ -22,6 +25,7 @@
 .include "include/primary/constants.inc"
 
 .segment "CODE"
+
 start:
 ; CPU initialization.  The stock ROM also sets up the stack at this point.
 ; That seems premature when we haven't tested zero page - as zero page is used
