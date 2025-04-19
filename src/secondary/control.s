@@ -1,6 +1,14 @@
 ; This file contains routines that will be dynamically loaded to the 6504
 ; processor at runtime.  The compiled binary is included in the primary main
 ; diagnostics assembly file.
+;
+; The assembly code in this file is heavily optimised for size, in order to fit
+; into a single page (256 bytes) of RAM.  This makes it simpler for the primary
+; processor to load into the shared RAM, in turn reducing the size of that
+; code.
+;
+; Be very careful if you change any of the code in this file - it would be very
+; easy to inadvertently break it.
 
 ; Copyright (c) 2025 Piers Finlayson <piers@piers.rocks>
 ;
@@ -59,11 +67,11 @@ ZP_NON_STEP_BITS  = $06   ; Non-stepper bits to preserve
 ; Inner loop
 @delay_ms_inner:
     DEY                 ; Decrement inner counter
-    BNE @delay_ms_start ; Loop until inner counter = 0
+    BNE @delay_ms_inner ; Loop until inner counter = 0
 
 ; Continue outer loop
     DEX                 ; Decrement outer counter
-    BNE @delay_ms_inner ; Loop back to reload Y when X isn't zero
+    BNE @delay_ms_start ; Loop back to reload Y when X isn't zero
 .endmacro
 
 ; Do NOT put any code/data before the code segment starts, and that needs to
@@ -72,7 +80,9 @@ ZP_NON_STEP_BITS  = $06   ; Non-stepper bits to preserve
 
 ; Our entry point must be at $0500
 .segment "STARTUP"
-    JMP control
+    JMP control         ; We could save 3 bytes by reorganising the code so
+                        ; that control is located here and DATA at the end
+                        ; of the binary
 
 ; It is OK for data to come before the code segment starts, as the processor
 ; will be JMPed to control:
@@ -168,6 +178,8 @@ control:
     BEQ @rev
     CMP #CMD_BUMP
     BEQ @bump
+    CMP #CMD_MOVE_TO_END
+    BEQ @move_to_end
     
     ; No match, set ERR result (will be stored in @main_loop_result)
     LDA #CMD_RESULT_ERR     ; Set the result in A
@@ -229,7 +241,12 @@ control:
     BNE @move_loop          ; Always branch
 
 @bump:
-    LDX #$8C                ; 0x8C = 140 = 35 full track movements
+    LDX #$8C                ; 0x8C - value used by stock ROM for # of steps to
+                            ; cause bump.  This should be massively overkill.
+                            ; On one of my drives, I can cause the heads to
+                            ; advance 72 steps before hitting the inner end
+                            ; stop.  So bump doesn't really need to be more
+                            ; than this.
 
     ; A is non-zero from CMD_BUMP falling into @move_loop, so will go backwards
 
@@ -243,6 +260,13 @@ control:
     ; Done, so branch back to main_loop, setting result to OK
     BEQ @main_loop_ok       ; Always branch
 
+; @move_to_end put here, so the BEQ at the end of @move_loop compiles.
+@move_to_end:
+    LDX #$46                ; 70 steps to move forwards to reach end, assuming
+                            ; drive is at track 0.
+    LDA #$00                ; Set A to 0, so we move forwards
+    BEQ @move_loop          ; Always branch 
+
 @reset:
     LDA #STATUS_6504_RESETTING   ; Set status to resetting
     STA STATUS_6504
@@ -251,7 +275,7 @@ control:
 ; Stepper motor control routine.
 ;
 ; This routine moves the disk drive head exactly one stepper motor step in
-; either direction - this equates to 1/4 of a track.
+; either direction - this equates to 1/2 of a track.
 ;
 ; It handles proper phase sequencing and includes appropriate timing delays.
 ;
@@ -266,15 +290,16 @@ control:
 ;   None. Head position is changed by 1/2 track.
 ;
 ; REGISTERS AFFECTED:
-;   X restored, A and Y modified
+;   A and X restored, Y modified
 ;
 ; MEMORY LOCATIONS USED:
 ;   VIA_PBD ($40) - VIA Port B for stepper control
 ;
 step:
     TAY                     ; Save original A value for direction check
+    PHA                     ; Also store it for restoration
 
-    TXA                     ; Transfer A to X for later restoration
+    TXA                     ; Transfer X to A for later restoration
     PHA                     ; Save X on stack
 
     ; Isolate current phase bits for this drive
@@ -320,8 +345,11 @@ step:
     DelayMs                 ; Call delay macro
 
 ; finished
-    ; Restore X and A registers
+    ; Restore X register
     PLA                     ; Restore X
     TAX                     ; Transfer to X
+
+    ; Restore A register (required when looping calling this routine)
+    PLA                     ; Restore A register
 
     RTS

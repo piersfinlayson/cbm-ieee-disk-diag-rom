@@ -1636,19 +1636,23 @@ command_loop:
     BEQ @send_cmd
 
     CMP #CMD_MOTOR_OFF
-    .assert CMD_MOTOR_OFF >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_MOTOR_ON not an upper-case letter"
+    .assert CMD_MOTOR_OFF >= 'A' && CMD_MOTOR_OFF <= 'Z', error, "CMD_MOTOR_ON not an upper-case letter"
     BEQ @send_cmd
 
     CMP #CMD_FWD
-    .assert CMD_REV >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_REV not an upper-case letter"
+    .assert CMD_FWD >= 'A' && CMD_FWD <= 'Z', error, "CMD_FWD not an upper-case letter"
     BEQ @send_cmd
 
     CMP #CMD_REV
-    .assert CMD_FWD >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_FWD not an upper-case letter"
+    .assert CMD_REV >= 'A' && CMD_REV <= 'Z', error, "CMD_REV not an upper-case letter"
     BEQ @send_cmd
 
     CMP #CMD_BUMP
-    .assert CMD_FWD >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_FWD not an upper-case letter"
+    .assert CMD_BUMP >= 'A' && CMD_BUMP <= 'Z', error, "CMD_BUMP not an upper-case letter"
+    BEQ @send_cmd
+
+    CMP #CMD_MOVE_TO_END
+    .assert CMD_MOVE_TO_END >= 'A' && CMD_MOVE_TO_END <= 'Z', error, "CMD_MOVE_TO_END not an upper-case letter"
     BEQ @send_cmd
 
     ; No recognised command to handle

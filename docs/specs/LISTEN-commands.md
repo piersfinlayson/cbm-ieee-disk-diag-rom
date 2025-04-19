@@ -32,21 +32,21 @@ Any multi character commands, those received on other channels, or those (other 
 
 Proposed command set:
 
-| Command | Description |
-|---------|-------------|
-| A      | Enter command mode |
-| 0      | Select drive 0 (default) |
-| 1      | Select drive 1 |
-| B      | Bump selected drive head against track 0|
-| E      | Move to track 35 |
-| M      | Motor on |
-| N      | Motor off |
-| H      | Set half track increment |
-| W      | Set whole track increment |
-| F      | Move head forward (to a higher track) by current increment |
-| R      | Move head reverse (to a lower track) by current increment |
-| Z      | [Reboot entire drive](#reboot) |
-| X      | Exit to command mode to flash code loop |
+| Command | Description | Notes | Implemented? |
+|---------|-------------|-------|--------------|
+| A      | Enter command mode || yes |
+| 0      | Select drive 0 (default) || yes |
+| 1      | Select drive 1 || yes |
+| B      | Bump selected drive head against track 0 | Attemps 140 half steps in reverse | yes |
+| E      | Move to end | Attampts 70 half steps forward | Will reach track 35 if starts from 0 | yes |
+| M      | Motor on || yes |
+| N      | Motor off || yes |
+| H      | Set half track increment | Default - not explicitly implemented | no |
+| W      | Set whole track increment | Decided not to implement | no |
+| F      | Move head forward (to a higher track) by current increment |Moves 1/2 track| yes |
+| R      | Move head reverse (to a lower track) by current increment |Moves 1/2 track| yes |
+| Z      | [Reboot entire drive](#reboot) || yes |
+| X      | Exit to command mode to flash code loop || yes |
 
 The diagnostics ROM pauses handling IEEE-488 commands until the previous command has been executed.
 

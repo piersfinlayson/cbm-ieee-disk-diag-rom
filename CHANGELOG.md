@@ -16,13 +16,15 @@ Have drive selection and motor turning on and off working
     - 1 - Select drive 1
     - M - Motor on
     - N - Motor off
-    - F - Move head forward (to a higher track) by one step (1/4 track)
-    - R - Move head reverse (to a lower track) by one step (1/4 track)
-    - B - Bump the selected drive head against track 0 (steps 140 times backwards)
+    - F - Move head forward (to a higher track) by one step (1/2 track)
+    - R - Move head reverse (to a lower track) by one step (1/2 track)
+    - B - Bump the selected drive head against track 0 (steps 140 times backwards per stock ROM)
+    - E - Move to end of the selected drive (steps 70 times forward) - will cause reverse bump if starts from anything other than track 0
 - Commands are case-insensitive
 - Improved IEEE-488 LISTEN handling.
 - Trimmed down IEEE-488 stack to save some bytes.
 - Increase robustness of IEEE-488 stack
+- Rearranged the binary to increase contiguous free space for primary processor's code.
 
 ## 0.1.5
 
