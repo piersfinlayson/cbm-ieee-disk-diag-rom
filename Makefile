@@ -99,8 +99,7 @@ $(BUILD_DIR)/ieee_diag_%.bin: $(BUILD_DIR)/pri_main_%.o $(PRI_OBJS) $(CONFIG_DIR
 	ld65 -C $(CONFIG_DIR)/primary_$*.cfg -o $@ $< $(PRI_OBJS)
 
 clean:
-	rm -f $(BUILD_DIR)/*
-	rm -rf $(CHECK_DIR)
+	rm -fr $(BUILD_DIR)/*
 
 # Include phony targets
 .PHONY: all clean build
