@@ -1626,15 +1626,29 @@ command_loop:
     .assert CMD_DR1 >= '0' && CMD_DR1 <= '9', error, "CMD_DR0 not a digit"
     BEQ @drive1
 
-    AND #$DF            ; Convert to upper-case ASCII to compare letters.
-                        ; This means the secondary procesor's routine will
-                        ; ever get upper-case, hence we don't need to change
-                        ; the case there.
+    ; Now check for letter commands.  Convert to upper-case ASCII first.  This
+    ; means the secondary processor's routine will ever get upper-case, hence
+    ; we don't need to change the case there so we can save 2 bytes there.
+    AND #$DF            ; Convert to upper-case ASCII
+
     CMP #CMD_MOTOR_ON
     .assert CMD_MOTOR_ON >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_MOTOR_ON not an upper-case letter"
     BEQ @send_cmd
+
     CMP #CMD_MOTOR_OFF
     .assert CMD_MOTOR_OFF >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_MOTOR_ON not an upper-case letter"
+    BEQ @send_cmd
+
+    CMP #CMD_FWD
+    .assert CMD_REV >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_REV not an upper-case letter"
+    BEQ @send_cmd
+
+    CMP #CMD_REV
+    .assert CMD_FWD >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_FWD not an upper-case letter"
+    BEQ @send_cmd
+
+    CMP #CMD_BUMP
+    .assert CMD_FWD >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_FWD not an upper-case letter"
     BEQ @send_cmd
 
     ; No recognised command to handle

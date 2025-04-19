@@ -78,6 +78,9 @@ CMD_DR0 = '0'
 CMD_DR1 = '1'
 CMD_MOTOR_ON = 'M'
 CMD_MOTOR_OFF = 'N'
+CMD_FWD = 'F'
+CMD_REV = 'R'
+CMD_BUMP = 'B'
 
 ; These are the supported status values the 6504 routine may return.
 STATUS_6504_NONE = $00

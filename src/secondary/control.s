@@ -22,12 +22,12 @@ MOTOR_PORTS = VIA_PBD
 ; Used for the motor control for the selected drive
 ZP_MOTOR_MASK_OFF = $00
 ZP_MOTOR_MASK_ON = $01
+ZP_PHASE_MASK = $02         ; Stepper motor phase mask for drive
+ZP_PHASE_STEP = $03         ; Stepper motor phase increment value for drive
 
-; Zero page locations we're using for temporary storage
-ZP_PHASE_CURRENT  = $0007   ; Current stepper phase bits
-ZP_NON_STEP_BITS  = $0008   ; Non-stepper bits to preserve
-ZP_PHASE_MASK     = $000A   ; Phase mask for the selected drive
-ZP_PHASE_STEP     = $000B   ; Phase increment value
+; Zero page locations used for temporary storage by stepper control
+ZP_PHASE_CURRENT  = $05   ; Current stepper phase bits
+ZP_NON_STEP_BITS  = $06   ; Non-stepper bits to preserve
 
 ; Do NOT put any code/data before the code segment starts, and that needs to
 ; begin with executable code - as the primary processor will execute from the
@@ -44,6 +44,13 @@ ZP_PHASE_STEP     = $000B   ; Phase increment value
 ; Byte 0 = Drive 0, Byte 1 = Drive 1.  1 off, 0 on
 MOTOR_MASK:
     .byte $A0, $50
+
+; Byte 0 = Drive 0, Byte 1 = Drive 1.  Drve 0 uses bits 2-3, drive 1 0-1.
+PHASE_MASK:
+    .byte $0C, $03
+
+PHASE_STEP:
+    .byte $04, $01
 
 .segment "CODE"
 control:
@@ -111,6 +118,12 @@ control:
     BEQ @motor_on
     CMP #CMD_MOTOR_OFF
     BEQ @motor_off
+    CMP #CMD_FWD
+    BEQ @fwd
+    CMP #CMD_REV
+    BEQ @rev
+    CMP #CMD_BUMP
+    BEQ @bump
     
     STA CMD_RESULT_CMD      ; Store the failed command
     LDA #CMD_RESULT_ERR     ; Set the result in A
@@ -132,6 +145,10 @@ control:
     STA ZP_MOTOR_MASK_OFF   ; Store it in the zero page
     EOR #$FF                ; Invert the mask
     STA ZP_MOTOR_MASK_ON    ; Store it in the zero page
+    LDA PHASE_MASK, X       ; Load the appropriate phase mask
+    STA ZP_PHASE_MASK       ; Store it in the zero page
+    LDA PHASE_STEP, X       ; Load the appropriate phase step
+    STA ZP_PHASE_STEP       ; Store it in the zero page
     JMP @main_loop_ok
 
 @motor_on:
@@ -149,7 +166,141 @@ control:
     STA VIA_PBD             ; Store it back
     JMP @main_loop_ok       ; We're done - A may or may not be 0
 
+@fwd:
+    STA CMD_RESULT_CMD      ; Set the command result to the command before
+                            ; we lose it
+
+    ; Set the direction to forward
+    LDA #$00
+    BEQ @move
+@rev:
+    STA CMD_RESULT_CMD      ; Set the command result to the command before
+                            ; we lose it
+
+    ; Set the direction to reverse - A is already non-zero so no need
+    .assert CMD_REV <> 0, error, "CMD_REV must not be 0"
+
+    ; Fall through to move
+@move:
+    JSR half_step           ; Call the stepper control routine
+    JMP @main_loop_ok
+
+@bump:
+    STA CMD_RESULT_CMD      ; Set the command result to the command before
+                            ; we lose it
+
+    LDX #$46                ; 0x46 = 70 = 35 full steps
+@bump_loop:
+    JSR half_step           ; Retains/restores X
+    DEX
+    BNE @bump_loop          ; Loop until X = 0
+    JMP @main_loop_ok       ; Not close enough to BEQ
+
 @reset:
     LDA #STATUS_6504_RESETTING   ; Set status to resetting
     STA STATUS_6504
     JMP (RESET)
+
+; Half track stepper motor control routine
+;
+; This routine moves the disk drive head exactly 1/2 track in either direction.
+; It handles proper phase sequencing and includes appropriate timing delays.
+;
+; INPUTS:
+;   A register: Direction:
+;       0 = forwards/inward/toward higher tracks
+;       non-zero = reverse/outward/toward track 0
+;   ZP_PHASE_MASK: Phase mask for the selected drive
+;   ZP_PHASE_STEP: Phase increment value for the selected drive
+;
+; OUTPUTS:
+;   None. Head position is changed by 1/2 track.
+;
+; REGISTERS AFFECTED:
+;   X restored, A and Y modified
+;
+; MEMORY LOCATIONS USED:
+;   VIA_PBD ($40) - VIA Port B for stepper control
+;
+half_step:
+    PHA                     ; Save original A value for direction check
+
+    ; Isolate current phase bits for this drive
+    LDA VIA_PBD             ; Get current port value
+    AND ZP_PHASE_MASK       ; Isolate just the phase bits for this drive
+    STA ZP_PHASE_CURRENT    ; Store current phase in zero page
+
+    ; Get non-stepper bits to preserve them
+    LDA VIA_PBD          
+    EOR ZP_PHASE_CURRENT    ; Clear out just the phase bits, preserve others
+    STA ZP_NON_STEP_BITS    ; Store non-stepper bits in zero page
+
+    ; Determine direction and calculate new phase
+    PLA                     ; Restore direction value to A
+    
+    ; If A=0, move forwards (increment phase)
+    ; If A!=0, move backwards (decrement phase)
+    BEQ @forwards
+
+; Backwards    
+    ; Move toward track 0 (backwards/lower tracks)
+    LDA ZP_PHASE_CURRENT    ; Get current phase from zero page
+    SEC                     ; Set carry for subtraction
+    SBC ZP_PHASE_STEP       ; Subtract phase increment
+    AND ZP_PHASE_MASK       ; Ensure result stays within valid range
+    JMP @update_phase
+    
+@forwards:
+    ; Move toward higher track numbers (forwards)
+    LDA ZP_PHASE_CURRENT    ; Get current phase from zero page
+    CLC                     ; Clear carry for addition
+    ADC ZP_PHASE_STEP       ; Add phase increment
+    AND ZP_PHASE_MASK       ; Ensure result stays within valid range
+
+@update_phase:
+    ; Update the stepper motor phase bits
+    ORA ZP_NON_STEP_BITS    ; Combine with preserved non-stepper bits
+    STA VIA_PBD             ; Update hardware register
+    
+    ; Wait for stepper to stabilize
+    JSR step_delay
+    
+    RTS
+
+; Delay Subroutine - provides approximately 7.7ms delay for stepper 
+; stabilization time
+;
+; Cycle timing at 1MHz (1 cycle = 1μs):
+; - Inner loop: DEY (2 cycles) + BNE (3/2 cycles)
+;   * 254 iterations with branch taken: 254 × (2+3) = 1270 cycles
+;   * 1 final iteration with branch not taken: 1 × (2+2) = 4 cycles
+;   * Total inner loop: 1274 cycles ≈ 1.27ms
+; - Outer loop (6 iterations): 
+;   * LDX initial: 2 cycles
+;   * LDY (2) + inner loop (1274) + DEX (2) + BNE (3/2) = 1281/1280 cycles per
+;     iteration
+;   * Final RTS: 6 cycles
+;   * Total: 7693 cycles ≈ 7.7ms
+; 
+; Restores X register
+step_delay:
+    TXA
+    PHA
+
+    LDX #$06            ; Outer loop counter (6 iterations) - 2 cycles
+
+@outer:
+    LDY #$FF            ; Inner loop counter (255 iterations) - 2 cycles
+
+@inner:
+    DEY                 ; Decrement inner counter - 2 cycles
+    BNE @inner          ; Loop until inner counter = 0 - 3 cycles (2 on last iteration)
+
+    DEX                 ; Decrement outer counter - 2 cycles
+    BNE @outer          ; Loop until outer counter = 0 - 3 cycles (2 on last iteration)
+
+; End of delay loop
+    PLA
+    TAX
+
+    RTS                 ; Return from subroutine - 6 cycles
