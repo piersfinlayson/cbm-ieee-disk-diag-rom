@@ -8,6 +8,7 @@
 BUILD_DIR = build
 CONFIG_DIR = config
 SRC_DIR = src
+CHECK_DIR = $(BUILD_DIR)/checks
 
 # Common compiler options
 CA65_OPTS = -W1 -I .
@@ -31,8 +32,48 @@ SEC_CONTROL_OBJ = $(BUILD_DIR)/secondary_control.o
 SEC_CONTROL_BIN = $(BUILD_DIR)/secondary_control.bin
 SEC_CONTROL_CFG = $(CONFIG_DIR)/secondary.cfg
 
+# Check timestamp files
+SEC_CHECK = $(CHECK_DIR)/secondary.checked
+PRI_F000_CHECK = $(CHECK_DIR)/primary_f000.checked
+PRI_D000_CHECK = $(CHECK_DIR)/primary_d000.checked
+
+# Build scripts
+CHECK_SCRIPT = ./check_sec_binary.sh
+
 # Default target
-all: $(ROM_BINS)
+all: build check
+
+build: $(ROM_BINS)
+
+# Ensure check directory exists
+$(CHECK_DIR):
+	@mkdir -p $(CHECK_DIR)
+
+# Make check depend on check timestamps
+check: $(SEC_CHECK) $(PRI_F000_CHECK) $(PRI_D000_CHECK)
+
+# Each timestamp depends on its binary
+$(SEC_CHECK): $(SEC_CONTROL_BIN) | $(CHECK_DIR)
+	@echo "Checking secondary control binary..."
+	@$(CHECK_SCRIPT) secondary $(SEC_CONTROL_BIN)
+	@touch $@
+
+$(PRI_F000_CHECK): $(BUILD_DIR)/ieee_diag_f000.bin | $(CHECK_DIR)
+	@echo "Checking primary f000 ROM..."
+	@$(CHECK_SCRIPT) primary $< 0F00
+	@touch $@
+
+$(PRI_D000_CHECK): $(BUILD_DIR)/ieee_diag_d000.bin | $(CHECK_DIR)
+	@echo "Checking primary d000 ROM..."
+	@$(CHECK_SCRIPT) primary $< 0F00
+	@touch $@
+
+# For convenience
+.PHONY: check_primary
+check_primary: $(PRI_F000_CHECK) $(PRI_D000_CHECK)
+
+.PHONY: check_secondary
+check_secondary: $(SEC_CHECK)
 
 # Secondary CPU compilation
 $(SEC_CONTROL_OBJ): $(SEC_CONTROL_SRC)
@@ -59,13 +100,14 @@ $(BUILD_DIR)/ieee_diag_%.bin: $(BUILD_DIR)/pri_main_%.o $(PRI_OBJS) $(CONFIG_DIR
 
 clean:
 	rm -f $(BUILD_DIR)/*
+	rm -rf $(CHECK_DIR)
 
 # Include phony targets
-.PHONY: all clean
+.PHONY: all clean build
 
 # Mark object files as precious to prevent automatic deletion
 .PRECIOUS: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_%.o
 
-# Individual variant targets for convenience
-f000: $(BUILD_DIR)/ieee_diag_f000.bin
-d000: $(BUILD_DIR)/ieee_diag_d000.bin
+# Individual variant targets
+f000: $(BUILD_DIR)/ieee_diag_f000.bin $(PRI_F000_CHECK)
+d000: $(BUILD_DIR)/ieee_diag_d000.bin $(PRI_D000_CHECK)
