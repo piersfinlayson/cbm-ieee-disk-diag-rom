@@ -29,17 +29,33 @@ ZP_NON_STEP_BITS  = $0008   ; Non-stepper bits to preserve
 ZP_PHASE_MASK     = $000A   ; Phase mask for the selected drive
 ZP_PHASE_STEP     = $000B   ; Phase increment value
 
+; Do NOT put any code/data before the code segment starts, and that needs to
+; begin with executable code - as the primary processor will execute from the
+; start of the shared RAM segment we load this code into.
+
+; Our entry point must be at $0500
+.segment "STARTUP"
+    JMP control
+
+; It is OK for data to come before the code segment starts, as the processor
+; will be JMPed to control:
+.segment "DATA"
+
 ; Byte 0 = Drive 0, Byte 1 = Drive 1.  1 off, 0 on
 MOTOR_MASK:
     .byte $20, $10
 
+
 .segment "CODE"
 control:
+    ; We are taking over the processor.  If we need to return, we will reboot
+    ; it by JMPing to the reset vector.
     CLD                     ; Clear decimal mode
     SEI                     ; Disable interrupts
     LDX #$3F                ; Set up stack
     TXS
 
+    ; Set various hardware registers ready to control the drive units.
     LDA #$FF
     STA VIA_PBDD    ; Set VIA port B pins to outputs
     LDA #$FC                
@@ -52,15 +68,17 @@ control:
     LDA #$07
     STA RRIOT_PBDDR ; Set RRIOT port B pins 0 -2 (DRV_SEL, DR0, DR1) to outputs
 
-    ; Set status to running.  We cannot change this in the loop because we
-    ; might change the shared RAM under the feet of the RAM test.
-    LDA #STATUS_6504_RUNNING ; Set status to running
+    ; Set status to running.  This signals to the primary processor that this
+    ; routine has been loaded and it running.  We can only change this now,
+    ; because later the primary will be testing the shared RAM, and we don't
+    ; want to be changing the RAM under its feet.
+    LDA #STATUS_6504_RUNNING
     STA STATUS_6504
     .assert STATUS_6504_RUNNING <> 0, error, "STATUS_6504_RUNNING must not be 0"
 
-    ; Set ourselves up as drive 0 by default.  It'll branch back to
-    ; @main_loop_ok once complete
-    LDA #$00
+    ; Set ourselves up as drive 0 by default.  That code will branch back to
+    ; continue at @main_loop_ok.
+    LDA #$00                ; Set A to 0 first, so this is what gets stored
     BEQ @drive0
 
 ; Main loop, which checks whether to run a command

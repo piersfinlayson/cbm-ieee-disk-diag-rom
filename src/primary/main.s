@@ -747,13 +747,13 @@ control_6504:
     ; Check if the 6504 has paused - takeover returns A = $00 if it has, $01 if
     ; it hasn't.  The last thing takeover_6504 does is LDA with the value, so
     ; we don't need to test it - test the Z flag directly instead.
-    BEQ @done
+    BEQ @success
 
-@failed:
+    ; Failure - mark it as such
     LDA #RESULT_6504_TO_ERR
-    STA RESULT_6504_TO  ; Mark takeover as failed
+    STA RESULT_6504_TO
 
-@done:
+@success:
     LDA #TEST_6504_TO   ; Mark this test as having been performed
     ORA TESTS_6502
     STA TESTS_6502

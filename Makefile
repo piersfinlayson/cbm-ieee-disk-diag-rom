@@ -29,6 +29,7 @@ SEC_SRC_DIR = $(SRC_DIR)/secondary
 SEC_CONTROL_SRC = $(SEC_SRC_DIR)/control.s
 SEC_CONTROL_OBJ = $(BUILD_DIR)/secondary_control.o
 SEC_CONTROL_BIN = $(BUILD_DIR)/secondary_control.bin
+SEC_CONTROL_CFG = $(CONFIG_DIR)/secondary.cfg
 
 # Default target
 all: $(ROM_BINS)
@@ -37,8 +38,8 @@ all: $(ROM_BINS)
 $(SEC_CONTROL_OBJ): $(SEC_CONTROL_SRC)
 	ca65 $(CA65_OPTS_SEC) $< -o $@
 
-$(SEC_CONTROL_BIN): $(SEC_CONTROL_OBJ)
-	ld65 -t none -o $@ $(SEC_CONTROL_OBJ)
+$(SEC_CONTROL_BIN): $(SEC_CONTROL_CFG) $(SEC_CONTROL_OBJ)
+	ld65 -C $(SEC_CONTROL_CFG) -o $@ $(SEC_CONTROL_OBJ)
 
 # Explicit pattern for pri_secondary, to ensure it is built with the secondary CPU bin file
 $(BUILD_DIR)/pri_secondary.o: $(PRI_SRC_DIR)/secondary.s $(SEC_CONTROL_BIN)
