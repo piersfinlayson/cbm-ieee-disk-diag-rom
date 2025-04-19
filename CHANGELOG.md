@@ -2,16 +2,16 @@
 
 ## 0.1.6
 
-Haven't tested longer listens
-Haven't added support for other commands (ones that go to 6504)
+New in this release:
+- PET program to aid with testing the drive.  This can be used to view diagnostics results and executed motoro commands on the drive units (see below) if IEEE-488 is working and connected to a controller (such as a PET or PC with xum1541/ZoomFloppy).
 
-Have drive selection and motor turning on and off working
+    ![Main Screen](/docs/images/support/main-screen.png "Main Screen")
 
-- Support global commands in response to single bytes in LISTEN mode on channel 15.
+- Global commands run by sending single bytes to the drive using LISTEN mode on channel 15.
     - A - Enter drive unit command mode
     - X - Exit drive unit command mode, re-enter flash code mode
     - Z - Reboot the drive (both primary and secondary processors)
-- Support drive unit commands in response to single bytes in LISTEN mode on channl 15.
+- Physical drive unit test commands run by sending single bytes to the drive using LISTEN mode on channel 15.
     - 0 - Select drive 0
     - 1 - Select drive 1
     - M - Motor on
@@ -19,12 +19,15 @@ Have drive selection and motor turning on and off working
     - F - Move head forward (to a higher track) by one step (1/2 track)
     - R - Move head reverse (to a lower track) by one step (1/2 track)
     - B - Bump the selected drive head against track 0 (steps 140 times backwards per stock ROM)
-    - E - Move to end of the selected drive (steps 70 times forward) - will cause reverse bump if starts from anything other than track 0
-- Commands are case-insensitive
-- Improved IEEE-488 LISTEN handling.
-- Trimmed down IEEE-488 stack to save some bytes.
-- Increase robustness of IEEE-488 stack
-- Rearranged the binary to increase contiguous free space for primary processor's code.
+    - E - ⚠️Move to end of the selected drive (steps 70 times forward) - will cause reverse bump if starts from anything other than track 0.  Use with caution!⚠️
+- All commands are case-insensitive.
+- Increase robustness of IEEE-488 stack and reduced its code size.
+- Rearranged the binary to increase contiguous free space for additional primary processor's diagnostics ROM code.
+- Approximately 774 free bytes in the ROM available to the primary processor and 20 free bytes for the secondary processor's command routine.
+
+To dos:
+- Haven't tested longer byte listens or listens on other channels.  Behaviour is undefined.
+- Error status not yet fully supported.  After querying the boot status (73), the ROM will consistently report 00,OK,00,00.
 
 ## 0.1.5
 

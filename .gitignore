@@ -1,3 +1,5 @@
 *.o
 *.bin
+*.prg
+*.d64
 build/*

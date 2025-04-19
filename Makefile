@@ -37,6 +37,12 @@ SEC_CHECK = $(CHECK_DIR)/secondary.checked
 PRI_F000_CHECK = $(CHECK_DIR)/primary_f000.checked
 PRI_D000_CHECK = $(CHECK_DIR)/primary_d000.checked
 
+# Support program source
+SUPPORT_SRC = $(SRC_DIR)/support/support.bas
+SUPPORT_BUILD_DIR = $(BUILD_DIR)/support
+SUPPORT_PRG = $(SUPPORT_BUILD_DIR)/ieee-support.prg
+SUPPORT_D64 = $(SUPPORT_BUILD_DIR)/ieee-support.d64
+
 # Build scripts
 CHECK_SCRIPT = ./check_sec_binary.sh
 
@@ -98,11 +104,23 @@ $(BUILD_DIR)/pri_main_%.o: $(PRI_SRC_DIR)/$(PRI_MAIN) $(SEC_CONTROL_BIN)
 $(BUILD_DIR)/ieee_diag_%.bin: $(BUILD_DIR)/pri_main_%.o $(PRI_OBJS) $(CONFIG_DIR)/primary_%.cfg
 	ld65 -C $(CONFIG_DIR)/primary_$*.cfg -o $@ $< $(PRI_OBJS)
 
-clean:
-	rm -fr $(BUILD_DIR)/*
+# Create .prg and .d64 files for the support program
+support:
+	@mkdir -p $(SUPPORT_BUILD_DIR)
+	@petcat -w2 -l 401 -o $(SUPPORT_PRG) -- $(SUPPORT_SRC)
+	@c1541 -format "piers.rocks,01" d64 $(SUPPORT_D64) -write $(SUPPORT_PRG) ieee-support > /dev/null
+	@echo "Created:"
+	@find $(SUPPORT_BUILD_DIR) -type f | xargs ls -ltr 
+
+clean_support:
+	@rm -f $(SUPPORT_PRG) $(SUPPORT_D64)
+	@rm -fr $(SUPPORT_BUILD_DIR)
+
+clean: clean_support
+	@rm -fr $(BUILD_DIR)/*
 
 # Include phony targets
-.PHONY: all clean build
+.PHONY: all clean build support clean_support
 
 # Mark object files as precious to prevent automatic deletion
 .PRECIOUS: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_%.o

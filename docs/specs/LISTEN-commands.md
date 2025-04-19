@@ -6,6 +6,8 @@ It may be possible to damage the drive or any inserted disk through use of the c
 - it may be possible to cause the head stepper motor to attempt to step too far, beyond its usual ROM allowed range
 - moving the head without the motor spinning may cause physical damage to the disk, or cause the head to become dirty with disk debris.
 
+Be particularly careful with the `E` command, which moves the head forward 70 half-tracks, to end-up track 35.  If the head starts above track 0, this will cause a reverse head-bang, which may not be good for the drive.
+
 Proceed at your own risk, and take note of the [warranty](/LICENSE.md) (none!) that comes with this software.
 
 ## Overview

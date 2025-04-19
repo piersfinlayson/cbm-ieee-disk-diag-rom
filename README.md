@@ -17,6 +17,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - 🆔 Detects and reports the configured hardware device ID (8, 9, etc)
 - 🔌 Reports diagnostic results to computer if IEEE-488 is operational 
 - 🖥️ Tests presence and functioning of secondary on-board CPU
+- 🔄 Provides fine-grained drive and head motor controls if IEEE-488 is operational 
 - 🔀 Can be run as replacement for main ROM or alongside stock DOS 1 ROMs
 
 ## 📝Contents
@@ -26,6 +27,7 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 - [📋Detailed Test Information](#detailed-test-information)
 - [📊Detailed Result Information](#detailed-result-information)
 - [🔌Reporting via IEEE-488](#reporting-via-ieee-488)
+- [🔄Motor Controls via IEEE-488](#motor-controls-via-ieee-488)
 - [🔨Building From Source](#building-from-source)
 - [📐Schematics and PCB Layouts](#schematics-and-pcb-layouts)
 - [🗺️Memory Layout](#memory-layout)
@@ -254,11 +256,46 @@ With the ERR LED off, the number of flashes, before pausing, indicates the hardw
 
 ## 🔌Reporting via IEEE-488
 
-Once the diagnostics tests have been run, and flash codes are being used to [report diagnostics results](#detailed-result-information), the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controlled via the hardware configured hardware ID, which is [reported via flash codes](#reporting-device-id).
+Once the diagnostics tests have been run, and flash codes are being used to [report diagnostics results](#detailed-result-information), the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controller (such as a PET) via the hardware configured device ID, which is [reported via flash codes](#reporting-device-id).
 
 Assuming the drive's IEEE-488 hardware is functional, the drive can then be instructed to provide its configured information by settig it to talk on the appropriate channel.
 
 An explanation of the various types of information follows.  While [📟 Last Operation Status](#last-operation-status) and [📋Channel Listing](#channel-listing) are available on the specified channels, information on other channels may vary depending on the ROM version.  Use the [📋Channel Listing](#channel-listing) to see what is available on each channel.
+
+### 🔄Motor Controls via IEEE-488
+
+⚠️If you mis-use this functionality you might damage your drive, or any disk inserted.  The stock drive ROM has various safety features included to avoid damaging the drive and disks.  These safety features are not included in the diagnostics ROM, in order to provide full control over the mechanism for diagnostic purposes.
+
+⚠️In particular:
+
+* ⚠️Only use command `E` (end) with caution, and immediately after a `B` (bump) command.  Otherwise the drive will perform a "reverse bump", stopping at the inside of the disk.  This may damage the unit.
+
+* ⚠️If you have a disk inserted in your drive, ensure the spindle motor is spinning before moving the heads.
+
+Like [Reporting via IEEE-488](#reporting-via-ieee-488), once the diagnostics tests have been run, and flash codes are being used to report diagnostics results, the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controller (such as a PET) via the hardware configured device ID, which is [reported via flash codes](#reporting-device-id).
+
+Assuming the drive's IEEE-488 hardware is functional, the diagnostics ROM can then be instructed to perform physical spindle and stepper motor tests using both drives 0 and 1.  To use this feature, you need to set the drive to listen on channel 15, and send it the one byte command code.
+
+For ease of use, see the included [Support Program](/src/support/README.md) for the PET to run these commands.
+
+![Support Program Main Screen](/docs/images/support/main-screen.png "Support Program Main Screen")
+
+There are some global commands which can be run whenever the ROM has finished its core tests:
+
+- `A` - Enter command mode (stops error reporting via flash codes)
+- `X` - Exit command mode and re-enter flash code mode
+- `Z` - Reboot entire drive
+
+To indicate the drive is in command mode, either drive 0 or drive 1 LED will be lit solidly indicating which drive is currently selected.  The following commands can then be run:
+
+- `0` - Select drive 0 (default)
+- `1` - Select drive 1
+- `B` - Bump selected drive head against track 0 (attempts 140 half steps in reverse, like the stock ROM)
+- `M` - Spindle motor on
+- `N` - Spindle motor off
+- `F` - Move head forward (to the inside of the disk, towards a higher track number) by one stepper motor step (1/2 track)
+- `R` - Move head reverse (to the outside of the disk, towards a lower track number) by one stepper motor step (1/2 track)
+- ⚠️`E` - Move to end (attempts 70 half steps forward, will reach track 35 if it starts from 0).  When improperly used, starting from a non-zero track number, this command will cause the drive to perform a "reverse bump", stopping at the inside of the disk.  This may damage the unit.
 
 ### 📟Last Operation Status
 
