@@ -191,6 +191,7 @@ control:
 
     LDX #$46                ; 0x46 = 70 = 35 full steps
 @bump_loop:
+    ; Direction is reverse as A non-zero
     JSR half_step           ; Retains/restores X
     DEX
     BNE @bump_loop          ; Loop until X = 0
@@ -267,7 +268,7 @@ half_step:
     
     RTS
 
-; Delay Subroutine - provides approximately 7.7ms delay for stepper 
+; Delay Subroutine - provides approximately 20ms delay for stepper 
 ; stabilization time
 ;
 ; Cycle timing at 1MHz (1 cycle = 1μs):
@@ -281,13 +282,15 @@ half_step:
 ;     iteration
 ;   * Final RTS: 6 cycles
 ;   * Total: 7693 cycles ≈ 7.7ms
+;
+; However, we make it 16 cycles ~= 20ms
 ; 
 ; Restores X register
 step_delay:
     TXA
     PHA
 
-    LDX #$06            ; Outer loop counter (6 iterations) - 2 cycles
+    LDX #$10            ; Outer loop counter (6 iterations) - 2 cycles
 
 @outer:
     LDY #$FF            ; Inner loop counter (255 iterations) - 2 cycles

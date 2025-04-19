@@ -60,12 +60,12 @@ $(SEC_CHECK): $(SEC_CONTROL_BIN) | $(CHECK_DIR)
 
 $(PRI_F000_CHECK): $(BUILD_DIR)/ieee_diag_f000.bin | $(CHECK_DIR)
 	@echo "Checking primary f000 ROM..."
-	@$(CHECK_SCRIPT) primary $< 0E00
+	@$(CHECK_SCRIPT) primary $< 0D00
 	@touch $@
 
 $(PRI_D000_CHECK): $(BUILD_DIR)/ieee_diag_d000.bin | $(CHECK_DIR)
 	@echo "Checking primary d000 ROM..."
-	@$(CHECK_SCRIPT) primary $< 0E00
+	@$(CHECK_SCRIPT) primary $< 0D00
 	@touch $@
 
 # For convenience
