@@ -2,17 +2,24 @@
 
 ## 0.1.6
 
-Have one byte listens working.
-Have a x and z commands working
-Think I've fixed 6504 immediate reset from control loop - but may have introduced that this time as well.
-
 Haven't tested longer listens
 Haven't added support for other commands (ones that go to 6504)
-Think there's still some flakiness around IEEE-488 interrupt handling - if xum1541 is in bad state it can end up hanging us.
-Haven't dealt with data on other channels yet
 
+Have drive selection and motor turning on and off working
+
+- Support global commands in response to single bytes in LISTEN mode on channel 15.
+    - A - Enter drive unit command mode
+    - X - Exit drive unit command mode, re-enter flash code mode
+    - Z - Reboot the drive (both primary and secondary processors)
+- Support drive unit commands in response to single bytes in LISTEN mode on channl 15.
+    - 0 - Select drive 0
+    - 1 - Select drive 1
+    - M - Motor on
+    - N - Motor off
+- Commands are case-insensitive
+- Improved IEEE-488 LISTEN handling.
 - Trimmed down IEEE-488 stack to save some bytes.
-- Improve IEEE-488 LISTEN handling
+- Increase robustness of IEEE-488 stack
 
 ## 0.1.5
 

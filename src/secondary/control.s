@@ -43,8 +43,7 @@ ZP_PHASE_STEP     = $000B   ; Phase increment value
 
 ; Byte 0 = Drive 0, Byte 1 = Drive 1.  1 off, 0 on
 MOTOR_MASK:
-    .byte $20, $10
-
+    .byte $A0, $50
 
 .segment "CODE"
 control:
@@ -63,8 +62,8 @@ control:
     STA VIA_PCR     ; Initialize peripheral control register
     LDA #$7F
     STA VIA_IER     ; Disable VIA interrupts
-    LDA #$00
-    STA VIA_ACR     ; Disable auxiliary control register features
+    LDX #$00        ; Use X so its zero
+    STX VIA_ACR     ; Disable auxiliary control register features
     LDA #$07
     STA RRIOT_PBDDR ; Set RRIOT port B pins 0 -2 (DRV_SEL, DR0, DR1) to outputs
 
@@ -76,19 +75,19 @@ control:
     STA STATUS_6504
     .assert STATUS_6504_RUNNING <> 0, error, "STATUS_6504_RUNNING must not be 0"
 
-    ; Set ourselves up as drive 0 by default.  That code will branch back to
-    ; continue at @main_loop_ok.
-    LDA #$00                ; Set A to 0 first, so this is what gets stored
-    BEQ @drive0
+    ; Do not select a drive by default.  command_loop: will set up to drive 0
+    ; before doing anything else.
 
 ; Main loop, which checks whether to run a command
 @main_loop_ok:
+    ; As command executed OK, load OK to accumulator
     LDA #CMD_RESULT_OK
 @main_loop_result:
     STA CMD_RESULT          ; Store result of command
     LDA #CMD_NONE
     STA CMD1                ; Reset both command bytes
     STA CMD2
+
 @main_loop:
     ; Check whether CMD1 is set to a valid command
     LDA CMD1
@@ -99,8 +98,9 @@ control:
     CMP CMD2
     BNE @main_loop          ; If not, loop back and check CMD1 again
 
-    ; CMD1 and CMD2 match.  Now check if it's a valid command
-    AND #$DF                ; Force to uppercase
+    ; CMD1 and CMD2 match.  Now check if it's a valid command.
+    ; No need to force upper-case here, command_loop: on the primary processor
+    ; did that for us
     CMP #CMD_RESET
     BEQ @reset
     CMP #CMD_DR0
@@ -112,37 +112,41 @@ control:
     CMP #CMD_MOTOR_OFF
     BEQ @motor_off
     
-    STA CMD_RESULT_CMD      ; Set the result
-    LDA #CMD_RESULT_ERR
-    BNE @main_loop_result   ; If not, loop back and check CMD1 again
+    STA CMD_RESULT_CMD      ; Store the failed command
+    LDA #CMD_RESULT_ERR     ; Set the result in A
+    JMP @main_loop_result   ; If not, loop back and check CMD1 again
 
 @drive0:
+    ; Set X input to drive_common to drive number.  A is set to the CMD
     LDX #$00
     BEQ @drive_common
 @drive1:
+    ; Set X input to drive_common to drive number.  A is set to the CMD
     LDX #$01
 @drive_common:
+    ; X should be drive number (0 or 1) and A should be the command that
+    ; was executed.
     STA CMD_RESULT_CMD      ; Set the command result to the command before
                             ; we lose it
     LDA MOTOR_MASK, X       ; Load the appropriate motor mask
     STA ZP_MOTOR_MASK_OFF   ; Store it in the zero page
     EOR #$FF                ; Invert the mask
     STA ZP_MOTOR_MASK_ON    ; Store it in the zero page
-    BNE @main_loop_ok       ; We're done - A is not 0
+    JMP @main_loop_ok
 
 @motor_on:
     STA CMD_RESULT_CMD      ; Set the command result to the command before
                             ; we lose it
-    LDA MOTOR_PORTS         ; Load current value of motor ports
+    LDA VIA_PBD             ; Load current value of motor ports
     AND ZP_MOTOR_MASK_ON    ; Mask out the motors that should be on (0 is on)
     JMP @motor_common
 @motor_off:
     STA CMD_RESULT_CMD      ; Set the command result to the command before
                             ; we lose it
-    LDA MOTOR_PORTS         ; Load current value of motor ports
+    LDA VIA_PBD             ; Load current value of motor ports
     ORA ZP_MOTOR_MASK_OFF   ; Set the motors that should be off (1 is off)
 @motor_common:
-    STA MOTOR_PORTS         ; Store it back
+    STA VIA_PBD             ; Store it back
     JMP @main_loop_ok       ; We're done - A may or may not be 0
 
 @reset:

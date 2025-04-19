@@ -1272,17 +1272,16 @@ ieee_irq_handler:
     JSR talk_handler
 
 @atn_exit:
-    ; Reset control lines to idle state
-    LDA #$07                ; ~DACO, RFDO, ATNA all high
-    ORA IEEE_CONTROL
+    ; Reset control lines to idle state before leaving
+    LDA #$1C
     STA IEEE_CONTROL
 
     ; Process the command byte if there's one.  We have to do this after
     ; the previous code to set NDAC and NRFD high again, otherwise stuff will
     ; hang the next time ATN gets pulled low.  It's possible
-    ; process_listen_byte will not return - if it may reset the stack and cause
-    ; another routine to get called.
-    JSR process_command_byte
+    ; int_process_listen_byte will not return - if it may reset the stack and
+    ; cause another routine to get called.
+    JSR int_process_command_byte
 
     ; Restore registers
     PLA
@@ -1519,15 +1518,23 @@ send_byte:
     STA IEEE_CONTROL
     RTS
 
-; Called after we LISTENED for data
+; Called at the end of the ATN interrupt routine, before replacing the stack
+; and returning from the interrupt.
 ;
 ; If the byte was a:
 ; - A - enter command mode
 ; - X - exit command mode (back to flash mode)
 ; - Z - reboot the drive
 ; 
-; Otherwise leave for the command mode to process
-process_command_byte:
+; Otherwise leave for the non-interrupt command_loop: to process (assuming it
+; has been entered).
+;
+; If A or X was received, the stack is reset and the appropriate new non-
+; interrupt routine address is pushed onto the stack, followed by a new CPU
+; register byte.  RTI is then called, which causes he CPU to:
+; - reload the CPU registers from the stack
+; - jump to the new address on the stack.
+int_process_command_byte:
     ; Only process a command byte when not in talk and not in listen
     LDA IEEE_LISTEN_ACTIVE
     BEQ @continue_check_talk    ; No listen active, continue
@@ -1537,14 +1544,22 @@ process_command_byte:
     BEQ @continue       ; No talk active, continue
     RTS                 ; Talk active
 @continue:
+    LDA #ERR_LED        ; Set just the ERR LED, while processing
+    STA RIOT_UE1_PBD    ; Set ERR LED
+
+    ; Turn command into upper-case ascii
     LDA IEEE_CMD_BUF
-    AND #$DF            ; Turn command into upper case ASCII
+    AND #$DF
+
+    ; Check again commands we want to handle here
     CMP #'A'
     BEQ @enter_cmd_mode
     CMP #'X'
     BEQ @enter_flash_mode
     CMP #'Z'
     BEQ @reboot_drive
+
+    ; No command to handle, return.
     RTS
 @enter_cmd_mode:
     LDX #$FF            ; Reset the stack
@@ -1572,7 +1587,7 @@ process_command_byte:
 @reboot_drive:
     ; CMD_RESET is defined to be Z so we don't need to load something else and
     ; cost ourselves and instruction here
-    .assert CMD_RESET = 'Z', error, "CMD_RESET != 'A'"
+    .assert CMD_RESET = 'Z', error, "CMD_RESET != 'Z'"
     STA CMD2            ; Store command in shared RAM - secondary processor
     STA CMD1            ; Pick this up and reset
 @wait_secondary:
@@ -1592,47 +1607,62 @@ process_command_byte:
 ; Main command loop, not running in interrupt handler.  Handles any outstanding
 ; commands in IEEE_CMD_BUF.
 command_loop:
-    LDA #DR0_LED
-    BNE @set_leds
+    ; Immediately execute the drive 0 command.  This sets the drive LEDs up and
+    ; sets the secondary processor routine to drive 0.  Otherwise, if you enter
+    ; command mode, select drive 1, and then exit command mode and re-enter,
+    ; the secondary processor will still be set to drive 1, but we will be
+    ; drive 0.
+    LDA #CMD_DR0 
+    STA IEEE_CMD_BUF       
 @loop:
-    LDA IEEE_CMD_BUF
+    LDA IEEE_CMD_BUF    ; Load the command buffer to see if there's a command to
+                        ; execute
 
-    BEQ @loop           ; No command to process, loop
-
-    ; Handle drive 0/1 commands separately
+    ; Check for digit commands before we convert the command to upper-case
     CMP #CMD_DR0
+    .assert CMD_DR0 >= '0' && CMD_DR0 <= '9', error, "CMD_DR0 not a digit"
     BEQ @drive0
     CMP #CMD_DR1
+    .assert CMD_DR1 >= '0' && CMD_DR1 <= '9', error, "CMD_DR0 not a digit"
     BEQ @drive1
 
-@process_cmd:
-    ; Handle all other commands (including drives - they branch back to here)
-    ; by sending over to the second processor
+    AND #$DF            ; Convert to upper-case ASCII to compare letters.
+                        ; This means the secondary procesor's routine will
+                        ; ever get upper-case, hence we don't need to change
+                        ; the case there.
+    CMP #CMD_MOTOR_ON
+    .assert CMD_MOTOR_ON >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_MOTOR_ON not an upper-case letter"
+    BEQ @send_cmd
+    CMP #CMD_MOTOR_OFF
+    .assert CMD_MOTOR_OFF >= 'A' && CMD_MOTOR_ON <= 'Z', error, "CMD_MOTOR_ON not an upper-case letter"
+    BEQ @send_cmd
+
+    ; No recognised command to handle
+    BNE @loop           ; If we got here we know Z = 0, so will always loop
+
+@drive0:
+    LDX #DR0_LED        ; Set LED pattern to drive 0 LED
+    STX RIOT_UE1_PBD
+    JMP @send_cmd
+@drive1:
+    LDX #DR1_LED        ; Set LED pattern to drive 1 LED
+    STX RIOT_UE1_PBD
+@send_cmd:
+    ; Reset results of last command sent to secondary processor
     LDX #$00
     STX CMD_RESULT
     STX CMD_RESULT_CMD
+
+    ; Send the new command (still in A)
     STA CMD2
     STA CMD1
-    BNE @loop          ; Should always be non-zero!
 
-@drive0:
-    PHA
-    LDA #DR0_LED
-    .assert DR0_LED <> 0, error, "DR0_LED = 0"
-    BNE @set_leds
+    ; Reset this command before we loop back - X is stil 0
+    .assert CMD_NONE = 0, error, "CMD_NONE != 0"
+    STX IEEE_CMD_BUF
 
-@drive1:
-    PHA
-    LDA #DR1_LED
-    .assert DR1_LED <> 0, error, "DR1_LED = 0"
-    
-    ; Fall through to set_leds
-
-@set_leds:
-    STA CMD_LOOP_LED
-    STA RIOT_UE1_PBD    ; Set LED pattern to drive 0 LED
-    PLA
-    BNE @process_cmd    ; Should always be non-zero!
+    ; Loop back and check for a new command
+    JMP @loop
 
 ; "Routine" which jumps to an indirect address.  This is in place of being
 ; to JSR to an indirect address, which the 6502 doesn't support.  Only actual
