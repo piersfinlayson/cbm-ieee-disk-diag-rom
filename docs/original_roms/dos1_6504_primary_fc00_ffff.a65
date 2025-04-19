@@ -509,11 +509,9 @@
  ; how many steps have been taken. For bump operations, we set this to
  ; a high value to ensure the head reaches the physical track 0 stop.
  
- FD26  A9 8C                LDA #$8C       ; Load step counter with 140 (256-116)
-                                          ; This large negative value ensures head will move
-                                          ; outward until it hits the track 0 physical stop
-                                          ; Even from the innermost track (~35), this is more
-                                          ; than enough steps to reach track 0
+ FD26  A9 8C                LDA #$8C    ; Load step counter with 140
+                                        ; This is 1/4 steps = 35 tracks, so
+                                        ; guaranteed to reach track 0
  
  FD28  95 05                STA STEPS,X    ; Store step count in step counter for this drive
                                           ; The IRQ handler will use this to control stepping

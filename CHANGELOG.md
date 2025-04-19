@@ -16,9 +16,9 @@ Have drive selection and motor turning on and off working
     - 1 - Select drive 1
     - M - Motor on
     - N - Motor off
-    - F - Move head forward (to a higher track) by a half track
-    - R - Move head reverse (to a lower track) by a half track
-    - B - Bump the selected drive head against track 0 (issue 70 half-track steps backwards)
+    - F - Move head forward (to a higher track) by one step (1/4 track)
+    - R - Move head reverse (to a lower track) by one step (1/4 track)
+    - B - Bump the selected drive head against track 0 (steps 140 times backwards)
 - Commands are case-insensitive
 - Improved IEEE-488 LISTEN handling.
 - Trimmed down IEEE-488 stack to save some bytes.

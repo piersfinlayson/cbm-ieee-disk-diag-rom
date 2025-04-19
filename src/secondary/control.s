@@ -9,7 +9,8 @@
 ; Includes
 .include "include/shared.inc"
 
-; Locations of registers
+; Registers
+
 VIA_PBD = $40
 VIA_PBDD = $42
 VIA_ACR = $4B
@@ -17,7 +18,7 @@ VIA_PCR = $4C
 VIA_IER = $4E
 RRIOT_PBDDR = $83
 
-MOTOR_PORTS = VIA_PBD
+; Zero page locations
 
 ; Used for the motor control for the selected drive
 ZP_MOTOR_MASK_OFF = $00
@@ -28,6 +29,42 @@ ZP_PHASE_STEP = $03         ; Stepper motor phase increment value for drive
 ; Zero page locations used for temporary storage by stepper control
 ZP_PHASE_CURRENT  = $05   ; Current stepper phase bits
 ZP_NON_STEP_BITS  = $06   ; Non-stepper bits to preserve
+
+;
+; Macros
+;
+
+; Delay Macro - provides X * 1ms delay.
+;
+; Provided as a macro to avoid JSR and RTS (saves 4 bytes).
+;
+; Cycle timing at 1MHz (1 cycle = 1μs):
+; - Inner loop: DEY (2 cycles) + BNE (3/2 cycles)
+;   * 199 iterations with branch taken: 198 × (2+3) = 990 cycles
+;   * 1 final iteration with branch not taken: 1 × (2+2) = 4 cycles
+;   * Total: 994 cycles
+;
+; - Outer loop:
+;   * LDY (2) + DEX (2) + BNE (3/2) = 6 cycles per outer iteration
+;
+; The stock ROM operates the 6530 RRIOT chip in 1024T mode, pausing for 16
+; (15+1) 1024Ts between each step.  This is roughly 16.4ms.  Hence we want
+; 17 loops, so should call this routine this X set to 17, or $11.
+;
+; This will give 17 * 1000 cycles within this routine, which is 17ms exactly.
+.macro DelayMs
+@delay_ms_start:
+    LDY #$FF            ; Inner loop counter (255 iterations)
+
+; Inner loop
+@delay_ms_inner:
+    DEY                 ; Decrement inner counter
+    BNE @delay_ms_start ; Loop until inner counter = 0
+
+; Continue outer loop
+    DEX                 ; Decrement outer counter
+    BNE @delay_ms_inner ; Loop back to reload Y when X isn't zero
+.endmacro
 
 ; Do NOT put any code/data before the code segment starts, and that needs to
 ; begin with executable code - as the primary processor will execute from the
@@ -56,7 +93,8 @@ PHASE_STEP:
 control:
     ; We are taking over the processor.  If we need to return, we will reboot
     ; it by JMPing to the reset vector.
-    CLD                     ; Clear decimal mode
+    CLD                     ; Clear decimal mode - could get away without if we
+                            ; wanted to save one more byte
     SEI                     ; Disable interrupts
     LDX #$3F                ; Set up stack
     TXS
@@ -69,8 +107,8 @@ control:
     STA VIA_PCR     ; Initialize peripheral control register
     LDA #$7F
     STA VIA_IER     ; Disable VIA interrupts
-    LDX #$00        ; Use X so its zero
-    STX VIA_ACR     ; Disable auxiliary control register features
+    LDA #$00
+    STA VIA_ACR     ; Disable auxiliary control register features
     LDA #$07
     STA RRIOT_PBDDR ; Set RRIOT port B pins 0 -2 (DRV_SEL, DR0, DR1) to outputs
 
@@ -105,7 +143,13 @@ control:
     CMP CMD2
     BNE @main_loop          ; If not, loop back and check CMD1 again
 
-    ; CMD1 and CMD2 match.  Now check if it's a valid command.
+    ; CMD1 and CMD2 match.
+    
+    ; Store off the executed command now, so we only need one line of code to
+    ; do it in all cases.  If it's in invalid comment we'll handle that later.
+    STA CMD_RESULT_CMD      ; Store the failed command
+    
+    ; Now check if it's a valid command.
     ; No need to force upper-case here, command_loop: on the primary processor
     ; did that for us
     CMP #CMD_RESET
@@ -125,22 +169,28 @@ control:
     CMP #CMD_BUMP
     BEQ @bump
     
-    STA CMD_RESULT_CMD      ; Store the failed command
+    ; No match, set ERR result (will be stored in @main_loop_result)
     LDA #CMD_RESULT_ERR     ; Set the result in A
-    JMP @main_loop_result   ; If not, loop back and check CMD1 again
+    
+    ; Loop back, store result, and check CMD1 again
+    .assert CMD_RESULT_ERR <> 0, error, "CMD_RESULT_ERR must not be 0"
+    BNE @main_loop_result   ; Branch always
 
 @drive0:
     ; Set X input to drive_common to drive number.  A is set to the CMD
     LDX #$00
-    BEQ @drive_common
+
+    BEQ @drive_common       ; Always branch
+
 @drive1:
     ; Set X input to drive_common to drive number.  A is set to the CMD
     LDX #$01
+
+    ; fall through to @drive_common
+
 @drive_common:
     ; X should be drive number (0 or 1) and A should be the command that
     ; was executed.
-    STA CMD_RESULT_CMD      ; Set the command result to the command before
-                            ; we lose it
     LDA MOTOR_MASK, X       ; Load the appropriate motor mask
     STA ZP_MOTOR_MASK_OFF   ; Store it in the zero page
     EOR #$FF                ; Invert the mask
@@ -149,62 +199,60 @@ control:
     STA ZP_PHASE_MASK       ; Store it in the zero page
     LDA PHASE_STEP, X       ; Load the appropriate phase step
     STA ZP_PHASE_STEP       ; Store it in the zero page
-    JMP @main_loop_ok
+    BNE @main_loop_ok       ; phase step is non-zero
 
 @motor_on:
-    STA CMD_RESULT_CMD      ; Set the command result to the command before
-                            ; we lose it
     LDA VIA_PBD             ; Load current value of motor ports
     AND ZP_MOTOR_MASK_ON    ; Mask out the motors that should be on (0 is on)
-    JMP @motor_common
+    JMP @motor_common       ; Have to JMP here - A may or may not be 0
 @motor_off:
-    STA CMD_RESULT_CMD      ; Set the command result to the command before
-                            ; we lose it
     LDA VIA_PBD             ; Load current value of motor ports
     ORA ZP_MOTOR_MASK_OFF   ; Set the motors that should be off (1 is off)
 @motor_common:
     STA VIA_PBD             ; Store it back
-    JMP @main_loop_ok       ; We're done - A may or may not be 0
+    JMP @main_loop_ok       ; We're done - A may or may not be 0 so JMP
 
 @fwd:
-    STA CMD_RESULT_CMD      ; Set the command result to the command before
-                            ; we lose it
-
     ; Set the direction to forward
     LDA #$00
-    BEQ @move
-@rev:
-    STA CMD_RESULT_CMD      ; Set the command result to the command before
-                            ; we lose it
+    BEQ @single_step_common  ; A is 0 so always branch 
 
-    ; Set the direction to reverse - A is already non-zero so no need
+@rev:
+    ; Set the direction to reverse - A is already CMD_REV, so non-zero so no
+    ; need
     .assert CMD_REV <> 0, error, "CMD_REV must not be 0"
 
-    ; Fall through to move
-@move:
-    JSR half_step           ; Call the stepper control routine
-    JMP @main_loop_ok
+    ; Fall through to @single_step_common
+
+@single_step_common:
+    LDX #$01                ; Set X to 1 step
+    BNE @move_loop          ; Always branch
 
 @bump:
-    STA CMD_RESULT_CMD      ; Set the command result to the command before
-                            ; we lose it
+    LDX #$8C                ; 0x8C = 140 = 35 full track movements
 
-    LDX #$46                ; 0x46 = 70 = 35 full steps
-@bump_loop:
-    ; Direction is reverse as A non-zero
-    JSR half_step           ; Retains/restores X
+    ; A is non-zero from CMD_BUMP falling into @move_loop, so will go backwards
+
+; Coming into move_loop, X is set to number of steps to take
+@move_loop:
+    ; Direction is already reverse as A non-zero
+    JSR step                ; Retains/restores X
     DEX
-    BNE @bump_loop          ; Loop until X = 0
-    JMP @main_loop_ok       ; Not close enough to BEQ
+    BNE @move_loop          ; Loop until X = 0
+
+    ; Done, so branch back to main_loop, setting result to OK
+    BEQ @main_loop_ok       ; Always branch
 
 @reset:
     LDA #STATUS_6504_RESETTING   ; Set status to resetting
     STA STATUS_6504
     JMP (RESET)
 
-; Half track stepper motor control routine
+; Stepper motor control routine.
 ;
-; This routine moves the disk drive head exactly 1/2 track in either direction.
+; This routine moves the disk drive head exactly one stepper motor step in
+; either direction - this equates to 1/4 of a track.
+;
 ; It handles proper phase sequencing and includes appropriate timing delays.
 ;
 ; INPUTS:
@@ -223,8 +271,11 @@ control:
 ; MEMORY LOCATIONS USED:
 ;   VIA_PBD ($40) - VIA Port B for stepper control
 ;
-half_step:
-    PHA                     ; Save original A value for direction check
+step:
+    TAY                     ; Save original A value for direction check
+
+    TXA                     ; Transfer A to X for later restoration
+    PHA                     ; Save X on stack
 
     ; Isolate current phase bits for this drive
     LDA VIA_PBD             ; Get current port value
@@ -237,7 +288,7 @@ half_step:
     STA ZP_NON_STEP_BITS    ; Store non-stepper bits in zero page
 
     ; Determine direction and calculate new phase
-    PLA                     ; Restore direction value to A
+    TYA                     ; Restore direction value to A
     
     ; If A=0, move forwards (increment phase)
     ; If A!=0, move backwards (decrement phase)
@@ -264,46 +315,13 @@ half_step:
     STA VIA_PBD             ; Update hardware register
     
     ; Wait for stepper to stabilize
-    JSR step_delay
-    
+    LDX #$11                ; Set up ms counter for delay macro. See DelayMs
+                            ; comment for why the value of 17 is chosen.
+    DelayMs                 ; Call delay macro
+
+; finished
+    ; Restore X and A registers
+    PLA                     ; Restore X
+    TAX                     ; Transfer to X
+
     RTS
-
-; Delay Subroutine - provides approximately 20ms delay for stepper 
-; stabilization time
-;
-; Cycle timing at 1MHz (1 cycle = 1μs):
-; - Inner loop: DEY (2 cycles) + BNE (3/2 cycles)
-;   * 254 iterations with branch taken: 254 × (2+3) = 1270 cycles
-;   * 1 final iteration with branch not taken: 1 × (2+2) = 4 cycles
-;   * Total inner loop: 1274 cycles ≈ 1.27ms
-; - Outer loop (6 iterations): 
-;   * LDX initial: 2 cycles
-;   * LDY (2) + inner loop (1274) + DEX (2) + BNE (3/2) = 1281/1280 cycles per
-;     iteration
-;   * Final RTS: 6 cycles
-;   * Total: 7693 cycles ≈ 7.7ms
-;
-; However, we make it 16 cycles ~= 20ms
-; 
-; Restores X register
-step_delay:
-    TXA
-    PHA
-
-    LDX #$10            ; Outer loop counter (6 iterations) - 2 cycles
-
-@outer:
-    LDY #$FF            ; Inner loop counter (255 iterations) - 2 cycles
-
-@inner:
-    DEY                 ; Decrement inner counter - 2 cycles
-    BNE @inner          ; Loop until inner counter = 0 - 3 cycles (2 on last iteration)
-
-    DEX                 ; Decrement outer counter - 2 cycles
-    BNE @outer          ; Loop until outer counter = 0 - 3 cycles (2 on last iteration)
-
-; End of delay loop
-    PLA
-    TAX
-
-    RTS                 ; Return from subroutine - 6 cycles
