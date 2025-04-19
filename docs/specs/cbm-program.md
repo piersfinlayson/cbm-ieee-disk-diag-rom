@@ -18,8 +18,6 @@ The Commodore IEEE Disk Diagnostics ROM Support Program (called Support Program)
     * `E` - Move to track 35
     * `M` - Motor on
     * `N` - Motor off
-    * `H` - Set half track increment
-    * `W` - Set whole track increment
     * `F` - Move head forward (to a higher track)
     * `R` - Move head reverse (to a lower track)
     * `X` - Exit to command mode to flash code loop
