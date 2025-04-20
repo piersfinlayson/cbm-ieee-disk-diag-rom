@@ -195,6 +195,19 @@ If the [diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) or the [U
 
 If the drive proceeded beyond these tests and the first bank of static RAM (UC5/UC4) passed testing (which you can identify via [flash codes](#️static-ram-check-failed)), the drive will attempt to enable its IEEE-488 stack, enabling [reporting via IEEE-488](#reporting-via-ieee-488).  In this case it would be easier to retrieve diagnostics via IEEE-488 than via the LEDs.
 
+### 🚦Summary of Flash Codes
+
+| LED Pattern | Meaning |
+|-------------|---------|
+| All LEDs including ERR on | Device not booting |
+| ERR LED on, 1-4 flashes on either DR1 or DR0 | Static RAM check failed |
+| ERR on, 5 flashes on DR0 | UC1 zero page test failed |
+| ERR on, 6 flashes on both DR1 and DR0 | 6504 failed to boot |
+| ERR on, 7 flashes on both DR1 and DR0 | Failed to pause 6504 |
+| ERR LED off, DR0/DR1 flashing | Reporting Device ID |
+
+See below for more details on each of these results.
+
 ### ❌Diagnostics ROM failed to run
 
 In this scenario, all three LEDs will be lit.
