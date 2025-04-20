@@ -17,6 +17,7 @@
 ; Magic byte at the start of the diagnostics ROM (located at $D000), which is
 ; tested by the stock ROMs, to see if the diagnostics ROM is present.
 DIAG_START_BYTE = $55
+F000_START_BYTE = $F0
 RESERVED = $00
 
 ; Set first byte to $55 to indicate that this is a valid diagnostics ROM, if
@@ -29,8 +30,16 @@ RESERVED = $00
 ; We want the diagnostics ROM entry point to be at $D005, so we pad with
 ; another byte and then jump to the start of the zero-page tested and stack
 ; enabled part of our code.
+;
+; If built as the F000 ROM, we set the first byte to $F0 to differentiate it
+; from the $D000 ROM.  This will prevent the stock DOS 1 ROMs from trying to
+; execute it if it is installed in UJ1.
 .segment "HEADER"
+.ifdef F000_BUILD
+.byte F000_START_BYTE
+.else
 .byte DIAG_START_BYTE
+.endif
 .byte MAJOR_VERSION
 .byte MINOR_VERSION
 .byte PATCH_VERSION

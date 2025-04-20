@@ -17,8 +17,9 @@ CA65_OPTS_SEC = $(CA65_OPTS) -D SECONDARY_CPU=1
 
 # Primary CPU source files
 PRI_SRC_DIR = $(SRC_DIR)/primary
-PRI_SRCS = header.s data.s string.s secondary.s
+PRI_SRCS = data.s string.s secondary.s
 PRI_MAIN = main.s
+PRI_HEADER = header.s 
 PRI_OBJS = $(patsubst %.s,$(BUILD_DIR)/pri_%.o,$(PRI_SRCS))
 
 # Primary ROM variants
@@ -96,13 +97,17 @@ $(BUILD_DIR)/pri_secondary.o: $(PRI_SRC_DIR)/secondary.s $(SEC_CONTROL_BIN)
 $(BUILD_DIR)/pri_%.o: $(PRI_SRC_DIR)/%.s
 	ca65 $(CA65_OPTS_PRI) $< -o $@
 
+# Primary header.s for each variant
+$(BUILD_DIR)/pri_header_%.o: $(PRI_SRC_DIR)/$(PRI_HEADER)
+	ca65 $(CA65_OPTS_PRI) $< -o $@ -D $(shell echo $* | tr a-z A-Z)_BUILD
+
 # Primary main.s for each variant
 $(BUILD_DIR)/pri_main_%.o: $(PRI_SRC_DIR)/$(PRI_MAIN) $(SEC_CONTROL_BIN)
 	ca65 $(CA65_OPTS_PRI) $< -o $@ -D $(shell echo $* | tr a-z A-Z)_BUILD
 
 # Linking rules for each variant
-$(BUILD_DIR)/ieee_diag_%.bin: $(BUILD_DIR)/pri_main_%.o $(PRI_OBJS) $(CONFIG_DIR)/primary_%.cfg
-	ld65 -C $(CONFIG_DIR)/primary_$*.cfg -o $@ $< $(PRI_OBJS)
+$(BUILD_DIR)/ieee_diag_%.bin: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_header_%.o $(PRI_OBJS) $(CONFIG_DIR)/primary_%.cfg
+	ld65 -C $(CONFIG_DIR)/primary_$*.cfg -o $@ $(BUILD_DIR)/pri_main_$*.o $(BUILD_DIR)/pri_header_$*.o $(PRI_OBJS)
 
 # Create .prg and .d64 files for the support program
 support:
@@ -123,7 +128,7 @@ clean: clean_support
 .PHONY: all clean build support clean_support
 
 # Mark object files as precious to prevent automatic deletion
-.PRECIOUS: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_%.o
+.PRECIOUS: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_header_%.o $(BUILD_DIR)/pri_%.o
 
 # Individual variant targets
 f000: $(BUILD_DIR)/ieee_diag_f000.bin $(PRI_F000_CHECK)
