@@ -76,7 +76,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            build/ieee_diag_f000.bin
-            build/ieee_diag_d000.bin
+            build/xx40_ieee_diag_f000.bin
+            build/xx40_ieee_diag_d000.bin
+            build/8x50_ieee_diag_e000.bin
             build/support/ieee-support.prg
             build/support/ieee-support.d64

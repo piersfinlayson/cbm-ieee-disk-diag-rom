@@ -101,10 +101,29 @@ JOB_BUMP = $40
 ; Constants indicating where the code to be copied to the shared RAM to control
 ; the 6504 is located in this ROM.
 .ifdef F000_BUILD
-  SECONDARY_CODE_START = $FF00
+.ifdef XX40_DRIVE
+    SECONDARY_CODE_START = $FF00
 .else
-  SECONDARY_CODE_START = $DF00
+    .error "F000_BUILD only valid for XX40 drives"
 .endif
+.endif
+
+.ifdef E000_BUILD
+.ifdef XX50_DRIVE
+    SECONDARY_CODE_START = $FF00
+.else
+    .error "E000_BUILD only valid for XX50 drives"
+.endif
+.endif
+
+.ifdef D000_BUILD
+.ifdef XX40_DRIVE
+    SECONDARY_CODE_START = $DF00
+.else
+    .error "D000_BUILD only valid for XX40 drives"
+.endif
+.endif
+
 .endif
 
 ; Constants indicating shared RAM locations (as offsets from the start) used by

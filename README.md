@@ -1,12 +1,14 @@
 # 💾cbm-ieee-disk-diag-rom
 
-🛠️ A diagnostic ROM for Commodore 2040, 3040, and 4040 disk drives which use the IEEE-488 interface.
+🛠️ A diagnostic ROM for Commodore 2040, 3040, 4040, 8050 and 8250 disk drives which use the IEEE-488 interface.
 
 Got a question?  See the [FAQ](./FAQ.md).
 
 ## 📖Overview
 
-This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, and 4040). It performs memory and other tests and provides visual feedback through the drive's LEDs and, if functional, via the IEEE-488 port.
+This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, 4040, 8050 and 8250). It performs memory and other tests and provides visual feedback through the drive's LEDs and, if functional, via the IEEE-488 port.
+
+Note that the 8050 and 8250 support is untested as of writing, although the internal architecture is almost identical to the 2040/3040/4040, with the exception of ROM location and size (which is taken account of).
 
 ## ✨Features
 
@@ -42,8 +44,8 @@ This project provides a diagnostics ROM for early Commodore disk drives (2040, 3
 Either [Build From Source](#building-from-source) or download the ROMs from the [releases page](https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom/releases/).
 
 1. 🔥 Burn the appropriate ROM image to an EPROM/EEPROM:
-   - Use `ieee_diag_f000.bin` for installation at $F000
-   - Use `ieee_diag_d000.bin` for installation at $D000
+   - Use `xx40_ieee_diag_f000.bin` for installation at $F000
+   - Use `xx40_ieee_diag_d000.bin` for installation at $D000
 
 2. 🔌 Install the EPROM in the appropriate socket in your disk drive
    - $F000 - [UH1](#schematics-and-pcb-layouts)
@@ -63,7 +65,9 @@ After installing the ROM:
 
 To choose which ROM to install:
 
-### 🔄$F000 ROM replacement, UH1
+### 🔄$F000 ROM replacement, UH1 - 2040/3040/4040
+
+(Also, the $E000 ROM replacement, UH1 for the 8050/8250.)
 
 If you are unsure whether your upper, $F000, ROM, located at UH1 is functional, replace it with the $F000 version of this diagnostics ROM.
 
@@ -71,7 +75,7 @@ In particular, this is helpful if you have all three LEDs stay lit on your drive
 
 For a first test, you are best off removing the $E000 ROM (UL1) before running this diagnostics ROM at $F000, in case $E000/UL1 is faulty and causes address or data bus issues. 
 
-### 🔄$D000 ROM, UJ1
+### 🔄$D000 ROM, UJ1 - 2040/3040/4040
 
 If you believe your stock $F000 and $E000 ROMs are functional (the three LEDs go out after powering on), and your UJ1 socket is free, you can install the $D000 version of this ROM at location UJ1.  You need both $F000 and $E000 to boot far enough to load the ROM installed at $D000.  If you suspect either ROM of being faulty, start with the $F000 replacement method, above.
 
@@ -383,10 +387,10 @@ make f000   # Builds the standaline version
 make d000   # Builds the version to be installed alongside the stock DOS 1 ROMs
 ```
 
-This produces two ROM images:
-- `ieee_diag_f000.bin` - For installation at $F000
-- `ieee_diag_d000.bin` - For installation at $D000
-
+This produces these ROM images:
+- `xx40_ieee_diag_f000.bin` - For 2040/3040/4040 at $F000
+- `xx40_ieee_diag_d000.bin` - For 2040/3040/4040 at $D000
+- `8x50_ieee_diag_e000.bin` - For 8050/8250 at $E000
 
 ### 🏗️Build Process
 

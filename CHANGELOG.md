@@ -2,7 +2,7 @@
 
 ## 0.1.6
 
-The 💾 disk unit controller release 🎉
+The 💾 8x50 and disk unit controller release 🎉
 
 🆕New in this release:
 - 💻PET program to aid with testing the drive.  This can be used to view diagnostics results and executed motoro commands on the drive units (see below) if IEEE-488 is working and connected to a controller (such as a PET or PC with xum1541/ZoomFloppy).
@@ -26,6 +26,11 @@ The 💾 disk unit controller release 🎉
 - 🔌Increase robustness of IEEE-488 stack and reduced its code size.
 - 🔢Rearranged the binary to increase contiguous free space for additional primary processor's diagnostics ROM code.
 - 🆓Approximately 774 free bytes in the ROM available to the primary processor and 20 free bytes for the secondary processor's command routine.
+- Added _untested_ support for a 8050 and 8250 diagnostics ROM, located at $E000.  This replaces the top ROM from these drives (as these drives use 8KB 2364 ROMs).  This ROM is [8x50_ieee_diag_e000.bin](build/8x50_ieee_diag_e000.bin).
+
+Changed:
+- The 2040/3040/4040 ROMs are now called (xx40_ieee_diag_d000.bin)[build/xx40_ieee_diag_d000.bin] and (xx40_ieee_diag_f000.bin)[xx40_ieee_diag_f000.bin].
+- Unused space in the ROM is now filled with $FF instead of $00.
 
 To dos:
 - ❓Haven't tested longer byte listens or listens on other channels.  Behaviour is undefined.

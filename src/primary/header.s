@@ -17,6 +17,7 @@
 ; Magic byte at the start of the diagnostics ROM (located at $D000), which is
 ; tested by the stock ROMs, to see if the diagnostics ROM is present.
 DIAG_START_BYTE = $55
+E000_START_BYTE = $E0
 F000_START_BYTE = $F0
 RESERVED = $00
 
@@ -35,11 +36,31 @@ RESERVED = $00
 ; from the $D000 ROM.  This will prevent the stock DOS 1 ROMs from trying to
 ; execute it if it is installed in UJ1.
 .segment "HEADER"
+
 .ifdef F000_BUILD
-.byte F000_START_BYTE
-.else
-.byte DIAG_START_BYTE
+.ifdef XX40_DRIVE
+    .byte F000_START_BYTE
+.else 
+    .error "F000_BUILD only valid for XX40 drives"
 .endif
+.endif
+
+.ifdef E000_BUILD
+.ifdef XX50_DRIVE
+    .byte E000_START_BYTE
+.else
+    .error "E000_BUILD only valid for XX50 drives"
+.endif
+.endif
+
+.ifdef D000_BUILD
+.ifdef XX40_DRIVE
+    .byte DIAG_START_BYTE
+.else
+    .error "D000_BUILD only valid for XX40 drives"
+.endif
+.endif
+
 .byte MAJOR_VERSION
 .byte MINOR_VERSION
 .byte PATCH_VERSION
