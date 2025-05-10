@@ -10,6 +10,7 @@ show_help() {
     echo
     echo "Options:"
     echo "  f000        Use F000 image (default if no option specified)"
+    echo "  e000        Use E000 image - 8050/8250"
     echo "  d000        Use D000 image"
     echo "  -h, -?, --help  Display this help and exit"
     echo
@@ -26,6 +27,15 @@ if [ $# -gt 0 ]; then
     case "$1" in
         "f000"|"d000")
             IMAGE_TYPE="$1"
+            # Input and output files based on the image type
+            INPUT_FILE="build/xx40_ieee_diag_${IMAGE_TYPE}.bin"
+            OUTPUT_FILE="build/xx40_${IMAGE_TYPE}_1mbit.bin"
+            ;;
+        "e000")
+            IMAGE_TYPE="$1"
+            # Input and output files based on the image type
+            INPUT_FILE="build/8x50_ieee_diag_${IMAGE_TYPE}.bin"
+            OUTPUT_FILE="build/8x50_${IMAGE_TYPE}_1mbit.bin"
             ;;
         "-h"|"-?"|"--help")
             show_help
@@ -38,9 +48,6 @@ if [ $# -gt 0 ]; then
     esac
 fi
 
-# Input and output files based on the image type
-INPUT_FILE="build/ieee_diag_${IMAGE_TYPE}.bin"
-OUTPUT_FILE="build/${IMAGE_TYPE}_1mbit.bin"
 
 # Size of 1Mbit in bytes (1,048,576 bits = 131,072 bytes)
 MBIT_SIZE=$((1024 * 1024 / 8))
