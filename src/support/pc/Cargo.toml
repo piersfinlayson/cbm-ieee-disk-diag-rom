@@ -1,0 +1,20 @@
+[package]
+name = "pc-support"
+version = "0.1.0"
+edition = "2024"
+authors = ["Piers Finlayson <piers@piers.rocks>"]
+description = "PC support program for the CBM IEEE-488 disk diagnostics ROM"
+repository  = "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
+license = "MIT"
+documentation = "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
+keywords = ["commodore", "disk", "ieee", "opencbm", "retro"]
+categories = [
+    "hardware-support",
+    "asynchronous",
+    "emulators",
+    "development-tools",
+    "filesystem"
+]
+
+[dependencies]
+xum1541 = ">=0.3.2"

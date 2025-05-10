@@ -19,8 +19,8 @@ Note that the 8050 and 8250 support is untested as of writing, although the inte
 - 🆔 Detects and reports the configured hardware device ID (8, 9, etc)
 - 🔌 Reports diagnostic results to computer if IEEE-488 is operational 
 - 🖥️ Tests presence and functioning of secondary on-board CPU
-- 🔄 Provides fine-grained drive and head motor controls if IEEE-488 is operational 
-- 🔀 Can be run as replacement for main ROM or alongside stock DOS 1 ROMs
+- 🔄 Provides fine-grained drive and head motor controls from a PET or PC if IEEE-488 is operational 
+- 🔀 Can be run as replacement for main DOS 1 or DOS 2 ROMs or alongside stock DOS 1 ROMs
 
 ## 📝Contents
 - [📥Installation](#installation)

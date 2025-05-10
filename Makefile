@@ -51,11 +51,16 @@ XX40_F000_CHECK = $(CHECK_DIR)/$(XX40_PREFIX)_f000.checked
 XX40_D000_CHECK = $(CHECK_DIR)/$(XX40_PREFIX)_d000.checked
 XX50_E000_CHECK = $(CHECK_DIR)/$(XX50_PREFIX)_e000.checked
 
-# Support program source
-SUPPORT_SRC = $(SRC_DIR)/support/support.bas
+# PET Support program source
+PET_SUPPORT_SRC = $(SRC_DIR)/support/pet/support.bas
 SUPPORT_BUILD_DIR = $(BUILD_DIR)/support
-SUPPORT_PRG = $(SUPPORT_BUILD_DIR)/ieee-support.prg
-SUPPORT_D64 = $(SUPPORT_BUILD_DIR)/ieee-support.d64
+PET_SUPPORT_PRG = $(SUPPORT_BUILD_DIR)/ieee-support.prg
+PET_SUPPORT_D64 = $(SUPPORT_BUILD_DIR)/ieee-support.d64
+
+# PC Support program source
+PC_SUPPORT_SRC_DIR = $(SRC_DIR)/support/pc
+PC_SUPPORT_BIN_FILE = pc-support
+PC_SUPPORT_BIN_PATH = $(PC_SUPPORT_SRC_DIR)/target/release/$(PC_SUPPORT_BIN_FILE)
 
 # Build scripts
 CHECK_SCRIPT = ./check_sec_binary.sh
@@ -154,23 +159,46 @@ $(BUILD_DIR)/$(XX40_PREFIX)_ieee_diag_d000.bin: $(BUILD_DIR)/pri_main_d000.o $(B
 $(BUILD_DIR)/$(XX50_PREFIX)_ieee_diag_e000.bin: $(BUILD_DIR)/pri_main_e000.o $(BUILD_DIR)/pri_header_e000.o $(PRI_OBJS) $(CONFIG_DIR)/primary_8x50_e000.cfg
 	ld65 -C $(CONFIG_DIR)/primary_8x50_e000.cfg -o $@ $(BUILD_DIR)/pri_main_e000.o $(BUILD_DIR)/pri_header_e000.o $(PRI_OBJS)
 
+support: pet_support pc_support
+	@echo "Support programs built:"
+	@find $(SUPPORT_BUILD_DIR) -type f | xargs ls -ltr
+
 # Create .prg and .d64 files for the support program
-support:
-	@mkdir -p $(SUPPORT_BUILD_DIR)
-	@petcat -w2 -l 401 -o $(SUPPORT_PRG) -- $(SUPPORT_SRC)
-	@c1541 -format "piers.rocks,01" d64 $(SUPPORT_D64) -write $(SUPPORT_PRG) ieee-support > /dev/null
+pet_support: check_vice support_build
+	@petcat -w2 -l 401 -o $(PET_SUPPORT_PRG) -- $(PET_SUPPORT_SRC)
+	@c1541 -format "piers.rocks,01" d64 $(PET_SUPPORT_D64) -write $(PET_SUPPORT_PRG) ieee-support > /dev/null
 	@echo "Created:"
 	@find $(SUPPORT_BUILD_DIR) -type f | xargs ls -ltr 
 
-clean_support:
-	@rm -f $(SUPPORT_PRG) $(SUPPORT_D64)
-	@rm -fr $(SUPPORT_BUILD_DIR)
+clean_pet_support:
+	@rm -f $(PET_SUPPORT_PRG) $(PET_SUPPORT_D64)
+	@rm -fr $(SUPPORT_BUILD_DIR)/*
+
+clean_pc_support:
+	@cd $(PC_SUPPORT_SRC_DIR) && cargo clean
+	@rm -fr $(SUPPORT_BUILD_DIR)/$(PC_SUPPORT_BIN_FILE)
+
+pc_support: check_rust support_build
+	@cd $(PC_SUPPORT_SRC_DIR) && cargo build --release
+	@cp $(PC_SUPPORT_BIN_PATH) $(SUPPORT_BUILD_DIR)/
+
+support_build:
+	@mkdir -p $(SUPPORT_BUILD_DIR)
+
+clean_support: clean_pet_support clean_pc_support
 
 clean: clean_support
 	@rm -fr $(BUILD_DIR)/*
 
+check_vice:
+	@command -v petcat >/dev/null 2>&1 || { echo "ERROR: petcat not found, please install VICE emulator with\n  sudo apt update && sudo apt -y install vice"; exit 1; }
+	@command -v c1541 >/dev/null 2>&1 || { echo "ERROR: c1541 not found, please install VICE emulator with\n  sudo apt update && sudo apt -y install vice"; exit 1; }
+
+check_rust:
+	@command -v cargo >/dev/null 2>&1 || { echo "ERROR: cargo not found, please install Rust toolchain with\n  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"; exit 1; }
+
 # Include phony targets
-.PHONY: all clean build support clean_support check_xx40 check_8x50 check_secondary xx40 8x50
+.PHONY: all clean build support pet_support clean_pc_support pc_support clean_pet_support clean_support support_build check_xx40 check_8x50 check_secondary xx40 8x50 check_rust check_vice
 
 # Mark object files as precious to prevent automatic deletion
 .PRECIOUS: $(BUILD_DIR)/pri_main_%.o $(BUILD_DIR)/pri_header_%.o $(BUILD_DIR)/pri_%.o

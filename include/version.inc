@@ -5,5 +5,5 @@
 ; Licensed under the MIT License.  See [LICENSE] for details.
 
 MAJOR_VERSION = $00
-MINOR_VERSION = $01
-PATCH_VERSION = $06
+MINOR_VERSION = $02
+PATCH_VERSION = $01
