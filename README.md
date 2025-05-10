@@ -367,13 +367,22 @@ Detailed diagnostics results are reported, including whether UC1 failed the zero
 
 ### 📋Requirements
 
+For the diagnostics ROM:
+
 - `ca65` assembler (part of the cc65 suite)
 - `make` (for building using the Makefile)
+- `xxd` (for build checking)
 
-Install them both on linux like so:
+For the support programs:
+
+- `vice` (for building the PET support program)
+- `Rust` (for buildind PC support program)
+
+Install them all on linux like so:
 
 ```bash
-sudo apt-get install cc65 make
+sudo apt-get install cc65 make xxd
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 ### 🧰Compilation

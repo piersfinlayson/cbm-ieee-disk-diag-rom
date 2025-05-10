@@ -94,7 +94,7 @@ $(XX50_E000_CHECK): $(BUILD_DIR)/$(XX50_PREFIX)_ieee_diag_e000.bin | $(CHECK_DIR
 	@touch $@
 
 # Secondary check
-$(SEC_CHECK): $(SEC_CONTROL_BIN) | $(CHECK_DIR)
+$(SEC_CHECK): $(SEC_CONTROL_BIN) | xxd $(CHECK_DIR)
 	@echo "Checking secondary control binary..."
 	@$(CHECK_SCRIPT) secondary $(SEC_CONTROL_BIN)
 	@touch $@
@@ -106,8 +106,8 @@ check_xx40: $(XX40_F000_CHECK) $(XX40_D000_CHECK)
 .PHONY: check_8x50
 check_8x50: $(XX50_E000_CHECK)
 
-.PHONY: check_secondary
-check_secondary: $(SEC_CHECK)
+xxd:
+	@command -v xxd >/dev/null 2>&1 || { echo "ERROR: xxd not found, please install xxd with\n  sudo apt update && sudo apt -y install xxd"; exit 1; }
 
 # Drive family targets
 .PHONY: xx40 8x50
