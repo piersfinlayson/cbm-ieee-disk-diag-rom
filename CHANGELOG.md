@@ -5,10 +5,6 @@
 The 💾 8x50 and disk unit controller release 🎉
 
 🆕New in this release:
-- 💻PET program to aid with testing the drive.  This can be used to view diagnostics results and executed motor commands on the drive units (see below) if IEEE-488 is working and connected to a controller (such as a PET or PC with xum1541/ZoomFloppy).
-
-    ![Main Screen](/docs/images/support/main-screen.png "Main Screen")
-
 - 💻PC program to aid with testing the drive.  This can be used to send control characters to the diagnostics ROM directly, using IEEE-488 via an attached xum1541 or ZoomFloppy.  See below for the supported commands.
 
 - 🌍Global commands run by sending single bytes to the drive using LISTEN mode on channel 15.
@@ -29,6 +25,10 @@ The 💾 8x50 and disk unit controller release 🎉
 - 🔢Rearranged the binary to increase contiguous free space for additional primary processor's diagnostics ROM code.
 - 🆓Approximately 774 free bytes in the ROM available to the primary processor and 20 free bytes for the secondary processor's command routine.
 - Added _untested_ support for a 8050 and 8250 diagnostics ROM, located at $E000.  This replaces the top ROM from these drives (as these drives use 8KB 2364 ROMs).  This ROM is [8x50_ieee_diag_e000.bin](build/8x50_ieee_diag_e000.bin).
+- 💻PET program to aid with testing the drive - not yet working.  This can be used to view diagnostics results and executed motor commands on the drive units (see below) if IEEE-488 is working and connected to a controller (such as a PET or PC with xum1541/ZoomFloppy).
+
+    ![Main Screen](/docs/images/support/main-screen.png "Main Screen")
+
 
 Changed:
 - The 2040/3040/4040 ROMs are now called (xx40_ieee_diag_d000.bin)[build/xx40_ieee_diag_d000.bin] and (xx40_ieee_diag_f000.bin)[xx40_ieee_diag_f000.bin].
