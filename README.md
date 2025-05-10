@@ -206,8 +206,8 @@ If the drive proceeded beyond these tests and the first bank of static RAM (UC5/
 | All LEDs including ERR on | Device not booting |
 | ERR LED on, 1-4 flashes on either DR1 or DR0 | Static RAM check failed |
 | ERR on, 5 flashes on DR0 | UC1 zero page test failed |
-| ERR on, 6 flashes on both DR1 and DR0 | 6504 failed to boot |
-| ERR on, 7 flashes on both DR1 and DR0 | Failed to pause 6504 |
+| ERR on, 1 flash on both DR1 and DR0 | 6504 failed to boot |
+| ERR on, 2 flashes on both DR1 and DR0 | Failed to pause 6504 |
 | ERR LED off, DR0/DR1 flashing | Reporting Device ID |
 
 See below for more details on each of these results.
@@ -273,9 +273,9 @@ With the ERR LED off, the number of flashes, before pausing, indicates the hardw
 
 ## 🔌Reporting via IEEE-488
 
-Once the diagnostics tests have been run, and flash codes are being used to [report diagnostics results](#detailed-result-information), the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controller (such as a PET) via the hardware configured device ID, which is [reported via flash codes](#reporting-device-id).
+Once the diagnostics tests have been run, and flash codes are being used to [report diagnostics results](#detailed-result-information), the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controller (such as a PET or PC with xum1541/ZoomFloppy) via the hardware configured device ID, which is [reported via flash codes](#reporting-device-id).
 
-Assuming the drive's IEEE-488 hardware is functional, the drive can then be instructed to provide its configured information by settig it to talk on the appropriate channel.
+Assuming the drive's IEEE-488 hardware is functional, the drive can then be instructed to provide its configured information by setting it to talk on the appropriate channel.
 
 An explanation of the various types of information follows.  While [📟 Last Operation Status](#last-operation-status) and [📋Channel Listing](#channel-listing) are available on the specified channels, information on other channels may vary depending on the ROM version.  Use the [📋Channel Listing](#channel-listing) to see what is available on each channel.
 
@@ -312,7 +312,7 @@ To indicate the drive is in command mode, either drive 0 or drive 1 LED will be 
 - `N` - Spindle motor off
 - `F` - Move head forward (to the inside of the disk, towards a higher track number) by one stepper motor step (1/2 track)
 - `R` - Move head reverse (to the outside of the disk, towards a lower track number) by one stepper motor step (1/2 track)
-- ⚠️`E` - Move to end (attempts 70 half steps forward, will reach track 35 if it starts from 0).  When improperly used, starting from a non-zero track number, this command will cause the drive to perform a "reverse bump", stopping at the inside of the disk.  This may damage the unit.
+- ⚠️`E` - Move to end (attempts 68 half steps forward, will reach track 34 (35) if it starts from 0 (1)).  When improperly used, starting from a non-zero track number, this command will cause the drive to perform a "reverse bump", stopping at the inside of the disk.  This may damage the unit.
 
 ### 📟Last Operation Status
 

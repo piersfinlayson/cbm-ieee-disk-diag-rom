@@ -50,7 +50,7 @@
 2230 print "drive:  0-drive 0        1-drive 1"
 2235 print "drive#: m-motor on       n-motor off"
 2240 print "drive#: f-head fwd       r-head rev"
-2245 print "drive#: b-bump (tr 0)    e-end (tr 35)"
+2245 print "drive#: b-bump (tr 0)    e-end (tr 34)"
 2250 print "global: c-change device  ?-help"
 2260 print "---------------------------------------"
 2270 print "command:";
@@ -101,7 +101,7 @@
 4040 if k$="c" then close 15: goto 1000: rem change device
 4050 if k$="?" then gosub 6000: goto 4000: rem help
 4060 if k$="a" or k$="0" or k$="1" or k$="b" or k$="m" or k$="n" or k$="x" then gosub 7000: goto 4000: rem single commands
-4070 if k$="e" then gosub 8000: goto 4000: rem track 35 command
+4070 if k$="e" then gosub 8000: goto 4000: rem track 34 command
 4080 if k$="f" or k$="r" then gosub 9000: goto 4000: rem multiple commands
 4090 if k$="z" then gosub 10000: goto 1000: rem reboot drive
 4100 goto 4000
@@ -156,10 +156,10 @@
 6120 print "n - motor off"
 6150 print "f - move head forward a half track"
 6160 print "r - move head reverse a half track"
-6090 print "b - bump head against track 0"
+6090 print "b - bump head against track 0(1)"
 6095 print "    moves backwards 140 half tracks"
-6100 print "e - move to track 35"
-6105 print "    moves forward 70 half tracks"
+6100 print "e - move to track 34(35)"
+6105 print "    moves forward 68 half tracks"
 6170 print "x - enter drive flash mode"
 6180 print "z - reboot drive"
 6190 print "q - query channel"
@@ -182,9 +182,9 @@
 7100 gosub 2000: rem refresh screen
 7110 return
 
-8000 rem *** track 35 command ***
-8010 print "warning: moving to track 35 may cause a"
-8020 print "reverse head bump if not at track 0!"
+8000 rem *** track 34 command ***
+8010 print "warning: moving to track 34(35) may cause"
+8020 print "a reverse head bump if not at track 0"
 8030 print "are you sure? (y/n)";
 8040 get c$: if c$="" goto 8040
 8050 if c$<>"y" then return

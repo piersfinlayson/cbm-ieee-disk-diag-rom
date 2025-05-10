@@ -262,7 +262,7 @@ control:
 
 ; @move_to_end put here, so the BEQ at the end of @move_loop compiles.
 @move_to_end:
-    LDX #$46                ; 70 steps to move forwards to reach end, assuming
+    LDX #68                 ; 68 steps to move forwards to reach end, assuming
                             ; drive is at track 0.
     LDA #$00                ; Set A to 0, so we move forwards
     BEQ @move_loop          ; Always branch 
