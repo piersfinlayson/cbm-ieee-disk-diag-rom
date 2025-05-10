@@ -21,7 +21,7 @@ jobs:
       run: make
 
     - name: Build PET support images
-      run: make support
+      run: make pet_support
       
     - name: Upload ROMs and support images
       uses: actions/upload-artifact@v4

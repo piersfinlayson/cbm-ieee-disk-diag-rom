@@ -21,7 +21,7 @@ jobs:
         run: make
 
       - name: Build PET support images
-        run: make support
+        run: make pet_support
       
       - name: Get tag name
         id: get_tag
