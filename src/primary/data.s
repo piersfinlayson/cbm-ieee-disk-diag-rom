@@ -43,9 +43,9 @@
 ; the minus bit (BMI/BPL) more cheaply than processing another byte.
 
 ; ROM information strings
-CbmString StrRomName, "Commodore IEEE Disk Drive Diagnostics ROM"
-CbmString StrVersion, "Version: "
-CbmString StrCopyright, "(c) 2025 Piers Finlayson"
+CbmString StrRomName, "commodore ieee disk drive diagnostics rom"
+CbmString StrVersion, "version: "
+CbmString StrCopyright, "(c) 2025 piers finlayson"
 CbmString StrRepo, "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
 
 ; Boot string, provided alongside status code 73.  Our equivalent of:
@@ -64,30 +64,30 @@ END_STR_BOOT:
 ; Strings used in test status reporting
 CbmString StrStatusOk, "ok"
 CbmString StrStatusInternalError, "internal error"
-CbmString StrTestDelim, " Test: "
-CbmString StrZeroPage, "Zero Page"
-CbmString StrRam, "RAM"
+CbmString StrTestDelim, " test: "
+CbmString StrZeroPage, "xero Page"
+CbmString StrRam, "ram"
 CbmString Str6504Space, "6504 "
-CbmString StrBoot, "Boot"
-CbmString StrTakeover, "Takeover"
-CbmString StrFailed, "Failed"
-CbmString StrPassed, "Passed"
-CbmString StrNotAttempted, "Not Attempted"
+CbmString StrBoot, "boot"
+CbmString StrTakeover, "takeover"
+CbmString StrFailed, "failed"
+CbmString StrPassed, "passed"
+CbmString StrNotAttempted, "not attempted"
 CbmString StrSpaceDashSpace, " - "
-CbmString StrNotImplemented, "Not implemented"
-CbmString StrTestsFailed, "Test(s) failed"
-CbmString StrTestsPassed, "All tests passed"
-CbmString StrInvalidChannel, "Invalid channel"
+CbmString StrNotImplemented, "not implemented"
+CbmString StrTestsFailed, "test(s) failed"
+CbmString StrTestsPassed, "all tests passed"
+CbmString StrInvalidChannel, "invalid channel"
 
 ; Channel string
-CbmString StrChannel, "Channel "
+CbmString StrChannel, "channel "
 
 ; Channel names
-CbmString StrChannelListing, "Channel list"
-CbmString StrRomInfo, "ROM info"
-CbmString StrTestResults, "Test results"
-CbmString StrTestSummary, "Test summary"
-CbmString StrStatus, "Drive status"
+CbmString StrChannelListing, "channel list"
+CbmString StrRomInfo, "rom info"
+CbmString StrTestResults, "test results"
+CbmString StrTestSummary, "test summary"
+CbmString StrStatus, "drive status"
 
 ;
 ; Tables

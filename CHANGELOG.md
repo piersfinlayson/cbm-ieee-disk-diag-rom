@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+Bug fixes:
+- Make all strings lower case ASCII, so they print correctly on the PET
+
 ## 0.2.1
 
 The 💾 8x50 and disk unit controller release 🎉
