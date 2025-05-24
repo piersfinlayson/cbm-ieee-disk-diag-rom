@@ -2,14 +2,17 @@
 ;
 ; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
-; Disassembly and comts are Copyright (c) 2025 Piers Finlayson.
+; Disassembly and comments are Copyright (c) 2025 Piers Finlayson.
 ;
 ; The ROM was sourced from:
 ; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/8050/901483-04.bin
+;
+; Unlike 901887-01 and 901888-01, this ROM (these ROMs) only support the 8050,
+; not the 8250.
 
 ; da65 V2.19 - Git 162bc6b30
-; Created:    2025-05-24 14:11:21
-; Input file: bin/901483-04.bin
+; Created:    2025-05-24 16:06:00
+; Input file: roms/901483-04.bin
 ; Page:       1
 
 

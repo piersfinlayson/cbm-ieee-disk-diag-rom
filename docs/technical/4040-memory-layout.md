@@ -3,24 +3,25 @@
 ## 📝Contents
 
 - [🗺️Memory Map](#️memory-map)
-    - [6502](#6502)
-    - [6504](#6504)
-    - [Address Shadowing](#address-shadowing)
+
+  - [6502](#6502)
+  - [6504](#6504)
+  - [Address Shadowing](#address-shadowing)
 - [🧩Components](#components)
-    - [0️⃣Zero Page](#0️⃣zero-page)
-        - [6502 Zero Page](#6502-zero-page)
-        - [6504 Zero Page](#6504-zero-page)
-    - [📚Stack](#stack)
-        - [6502 Stack](#6502-stack)
-        - [6504 Stack](#6504-stack)
-    - [🔌RIOT chip registers](#riot-chip-registers)
-    - [🔌VIA chip registers](#via-chip-registers)
-    - [🔌RRIOT chip registers](#rriot-chip-registers)
-    - [🧠RAM](#ram)
-    - [🔐ROM](#rom)
-        - [6502 ROM](#6502-rom)
-        - [6504 ROM](#6504-rom)
-        - [GCR Encoding/Decoding ROM](#gcr-encodingdecoding-rom)
+  - [0️⃣Zero Page](#0️⃣zero-page)
+    - [6502 Zero Page](#6502-zero-page)
+    - [6504 Zero Page](#6504-zero-page)
+  - [📚Stack](#stack)
+    - [6502 Stack](#6502-stack)
+    - [6504 Stack](#6504-stack)
+  - [🔌RIOT chip registers](#riot-chip-registers)
+  - [🔌VIA chip registers](#via-chip-registers)
+  - [🔌RRIOT chip registers](#rriot-chip-registers)
+  - [🧠RAM](#ram)
+  - [🔐ROM](#rom)
+    - [6502 ROM](#6502-rom)
+    - [6504 ROM](#6504-rom)
+    - [GCR Encoding/Decoding ROM](#gcr-encodingdecoding-rom)
 
 ## 🗺️Memory Map
 
@@ -47,7 +48,7 @@ The 6502 is the disk drive's main processor, controlled by the primary ROMs, and
 | $4400-$4FFF | [Shadows](#address-shadowing) $4000-$43FF [RAM](#ram) x 3|
 | $5000-$7FFF | [Shadows](#address-shadowing) $D000-$FFFF [ROMs](#rom) |
 | $8000-$8FFF | [Shadows](#address-shadowing) $0000-$0FFF RIOT UC1/UE1|
-| $9000-$CFFF | [Shadows](#address-shadowing) $1000-$4FFF [RAM](#ram) | 
+| $9000-$CFFF | [Shadows](#address-shadowing) $1000-$4FFF [RAM](#ram) |
 | $D000-$DFFF | [ROM UJ1](#rom) |
 | $E000-$EFFF | [ROM UL1](#rom) |
 | $F000-$FFFF | [ROM UH1](#rom)  |
@@ -81,7 +82,7 @@ Therefore while this memory layout table shows just the $0000-$1FFF space, this 
 
 Various addresses map to other addresses - so when address A is accessed, B is actually accessed via the hardware.  This happens because some address lines are not connected, or because certain combinations of address lines are not handled by hardware.
 
-In at least one case this shadowing is actually used by the stock ROM firmware (and the diagnostics ROM) - the [Stack RAM](#stack) at $0100-$1FF shadows the [Zero Page](#0️⃣zero-page-ram).
+In at least one case this shadowing is actually used by the stock ROM firmware (and the diagnostics ROM) - the [Stack RAM](#stack) at $0100-$1FF shadows the [Zero Page](#0️⃣zero-page).
 
 Apart from the stack RAM, the author has not seen other examples of deliberate use of shadowed RAM.
 
@@ -121,11 +122,12 @@ The registers from the RIOT chips (the 6532s which also provide the zero page RA
 These registers expose IO pins and timer functionality.
 
 RIOT stands for
+
 - RAM
 - I/O
 - Timer
 
-### 🔌VIA Chip Registers 
+### 🔌VIA Chip Registers
 
 Accessed via the [6504](#6504).
 
@@ -133,7 +135,7 @@ The registers from the VIA chip (UM3) are mapped into the 6504's address space.
 
 These registers expose IO pins and other functionality.
 
-### 🔌RRIOT Chip Registers 
+### 🔌RRIOT Chip Registers
 
 Accessed via the [6504](#6504).
 
@@ -142,6 +144,7 @@ The registers from the RRIOT chip (UK3) are mapped into the 6504's address space
 These registers expose IO pins and timer functionality.
 
 RRIOT stands for
+
 - ROM
 - RAM
 - I/O
@@ -184,4 +187,4 @@ The [6504](#6504)'s ROM is provided by the RRIOT 6530 chip (UK3), which is a 1K 
 
 There is an additional 2316 2KB ROM installed on the drive in location UK6.  This handles encoding and decoding GCR data read from and written to the disk.  (GCR is essentially how Commodore drives encoding the 1s and 0s of data, an alternative to MFM which is used by PC drives.)
 
-It is not addressed or accessed by either processor directly, but instead is addressed by the RRIOT 6530 chip (UK3) and the data bus is accessed by the VIA chip (UM3). 
+It is not addressed or accessed by either processor directly, but instead is addressed by the RRIOT 6530 chip (UK3) and the data bus is accessed by the VIA chip (UM3).

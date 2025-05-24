@@ -2,7 +2,7 @@
 ;
 ; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
-; Disassembly and comts are Copyright (c) 2025 Piers Finlayson.
+; Disassembly and commentts are Copyright (c) 2025 Piers Finlayson.
 ;
 ; The ROM was sourced from:
 ; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/4040/901466-04.bin
@@ -32,8 +32,8 @@
 ; with 0 or 1 for the drive ID).
 
 ; da65 V2.19 - Git 162bc6b30
-; Created:    2025-05-24 14:46:29
-; Input file: bin/901466-04.bin
+; Created:    2025-05-24 16:05:54
+; Input file: roms/901466-04.bin
 ; Page:       1
 
 

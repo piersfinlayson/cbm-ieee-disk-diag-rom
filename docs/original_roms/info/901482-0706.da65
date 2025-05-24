@@ -1,0 +1,13 @@
+GLOBAL {
+    STARTADDR       $C000;
+    PAGELENGTH      0;
+    CPU             "6502";
+};
+
+SEGMENT     { START $C000;  END $FFFF;  NAME "firmware"; };
+
+RANGE   { START $FFFA;  END $FFFF;  TYPE AddrTable; };
+
+LABEL { ADDR $FFFA;     NAME "nmi_vector"; };
+LABEL { ADDR $FFFC;     NAME "reset_vector"; };
+LABEL { ADDR $FFFE;     NAME "irq_vector"; };

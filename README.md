@@ -109,9 +109,9 @@ After boot and during this phase, the ERR LED is not used.  The other LEDs show 
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #1](#static-ram-test) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
-| No visual indication | [Checking 6504 booted](#checking-the-6504-booted) |
+| No visual indication | [Checking secondary booted](#checking-the-secondary-booted) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
-| No visual indication | [Attempted to pause 6504](#️pausing-the-6504) |
+| No visual indication | [Attempted to pause secondary](#️pausing-the-secondary) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #2](#static-ram-test) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
@@ -122,7 +122,7 @@ After the above tests have run the drive goes through a reporting sequence, and 
 
 - Report any zero page error with UC1
 - Report any static RAM errors
-- Report any 6504 errors
+- Report any secondary CPU errors
 - Report any device ID
 
 If you don't see the ERR LED coming on, and you see 8 flashes of the DR0/DR1 LEDs repeating, congratulations - the diagnostics ROM tests passes, and your device is configured as device 8.
@@ -134,8 +134,8 @@ Reporting uses the following patterns:
 | ERR and DR1 LEDs blinking fast | [UE1 zero page test failed](#ue1-zero-page-test-failed) |
 | ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#️static-ram-check-failed) |
 | ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#️uc1-zero-page-test-failed) |
-| ERR on, 6 flashes on both DR1 and DR0 | [6504 failed to boot](#️6504-failed-to-boot) |
-| ERR on, 7 flashes on both DR1 and DR0 | [Failed to pause 6504](#️failed-to-pause-6504) |
+| ERR on, 6 flashes on both DR1 and DR0 | [Secondary failed to boot](#️secondary-failed-to-boot) |
+| ERR on, 7 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
 | ERR LED off, DR0/DR1 flashing | [Reporting Device ID](#reporting-device-id) |
 
 ## 📋Detailed Test Information
@@ -172,7 +172,7 @@ There is no visual indication when it happens and it is very fast - the ROM just
 Two static RAM tests are performed:
 
 - The first tests $1100-$13FF, $2000-$23FF, $3000-$33FF and $4000-43FF.
-- THe second, which runs after checking the 6504 and attempting to take over control over it, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the 6504, to take it over.  We try to take the 6504 over before testing this range, so we avoid crashing or confusing the 6504 by changing RAM from under it.
+- THe second, which runs after checking the secondary CPU and attempting to take over control over it, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the secondary, to take it over.  We try to take the secondary over before testing this range, so we avoid crashing or confusing the secondary by changing RAM from under it.
 
 The DR0 and DR1 LEDs illuminate during each page (256 byte) test, with the LED switching for each page of RAM is tested.
 
@@ -181,19 +181,19 @@ The DR0 and DR1 LEDs illuminate during each page (256 byte) test, with the LED s
 
 The static RAM test is relatively straightforward.  Each byte is tested in turn with a variety of patterns.  If a failure is hit on both the upper nibble and lower nibble for an address in a particular bank, the remaining tests for that bank is skipped - as this demonstrates both RAM chips for that bank are faulty.  
 
-### 🟡Checking the 6504 booted
+### 🟡Checking the secondary booted
 
-Before testing RAM $1000-10FF, the diagnostics ROM checks the 6504 booted.  This is done by checking some shared RAM locations the 6504 should have written to - these are located in the $1000-$10FF range.  Of course, it is possible, as this RAM range hasn't been tested yet it isn't working - and we get a false positive - but we have checked the remaining 75% of the chips that make up this range if we perform this test, so it is highly likely the RAM is good.
+Before testing RAM $1000-10FF, the diagnostics ROM checks the secondary booted.  This is done by checking some shared RAM locations the secondary should have written to - these are located in the $1000-$10FF range.  Of course, it is possible, as this RAM range hasn't been tested yet it isn't working - and we get a false positive - but we have checked the remaining 75% of the chips that make up this range if we perform this test, so it is highly likely the RAM is good.
 
-If the 6504 appears not to have booted, the subsequent step [Pausing the 6504](#️pausing-the-6504) will be skipped.
+If the secondary appears not to have booted, the subsequent step [Pausing the secondary](#️pausing-the-secondary) will be skipped.
 
-### ⏸️Pausing the 6504
+### ⏸️Pausing the secondary
 
-After checking the 6504 has booted, and still before testing RAM $1000-$10FF, the diagnostics ROM attemptes to pause the 6504.  The ROM will wait for up to 1s for a response from the 6504 that it has paused.  The drive 0 motor will very briefly spin if this test is successful.  (The reason for the brief spin, is that the 6504 stock ROM code will spin up the drive motor briefly when the 6502 asks it to execute a job - which is how the diagnostics ROM takes over the 6504.  It does this because it expects a job to involve reading or writing to the disk - for example, this is the mechanism that is used by the 6502 to format a disk.)
+After checking the secondary processor has booted, and still before testing RAM $1000-$10FF, the diagnostics ROM attemptes to pause it.  The ROM will wait for up to 1s for a response from the secondary that it has paused.  The drive 0 motor will very briefly spin with a DOS 1 drive if this test is successful.  (The reason for the brief spin, is that the secondary stock ROM code will spin up the drive motor briefly when the primary asks it to execute a job - which is how the diagnostics ROM takes over the secondary.  It does this because it expects a job to involve reading or writing to the disk - for example, this is the mechanism that is used by the secondary to format a disk.)
 
-This test has the added benefit of checking that the 6504 is running, and behaving as expected, not just that it has booted - if the diagnostics ROM can take it over and pause it, the 6504 and its ROM (stored in the 6530 RRIOT UK3) are working.
+This test has the added benefit of checking that the secondary is running, and behaving as expected, not just that it has booted - if the diagnostics ROM can take it over and pause it, the secondary and its ROM (stored in the 6530 RRIOT UK3) are working.
 
-We can also use this capability to add further 6504 tests in future, as we have full control over it if this test succeeds.
+We can also use this capability to add further secondary tests, such as controlling the drive mechanisms, as we have full control over it if this test succeeds.
 
 ## 📊Detailed Result Information
 
@@ -212,8 +212,8 @@ If the drive proceeded beyond these tests and the first bank of static RAM (UC5/
 | All LEDs including ERR on | Device not booting |
 | ERR LED on, 1-4 flashes on either DR1 or DR0 | Static RAM check failed |
 | ERR on, 5 flashes on DR0 | UC1 zero page test failed |
-| ERR on, 1 flash on both DR1 and DR0 | 6504 failed to boot |
-| ERR on, 2 flashes on both DR1 and DR0 | Failed to pause 6504 |
+| ERR on, 1 flash on both DR1 and DR0 | Secondary processor failed to boot |
+| ERR on, 2 flashes on both DR1 and DR0 | Failed to pause secondary |
 | ERR LED off, DR0/DR1 flashing | Reporting Device ID |
 
 See below for more details on each of these results.
@@ -260,19 +260,19 @@ In this scenario the ERR LED is lit while either the DR1 or DR0 LED flashes.  Al
 | DR1 | 3 | UE5 |
 | DR1 | 4 | UF5 |
 
-If you see failures across all of your chips, it may instead be one or more failed 74LS157s UC3/UD3/UE3/UF3 - as these multiplex the address lines from the 6502 and 6504 to the RAM chips.  Or, it may be a bus problem - try removing the 6504 (UH3), 6530 (UK3) and 6522 (UM3) from the board and re-running the test.  This isolates those chip as potentially conflicting with the shared data bus.  Of course, you will then get a 6504 error reported.
+If you see failures across all of your chips, it may instead be one or more failed 74LS157s UC3/UD3/UE3/UF3 - as these multiplex the address lines from the primary and secondary CPUs to the RAM chips.  Or, it may be a bus problem - try removing the secondary processor (UH3), 6530 (UK3) and 6522 (UM3) from the board and re-running the test.  This isolates those chip as potentially conflicting with the shared data bus.  Of course, you will then get a secondary CPU error reported.
 
-### ⚠️6504 failed to boot
+### ⚠️Secondary failed to boot
 
-If this fails, it may be a 6504 failure, or a  problem with another chip on the 6504 address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.  Or a problem with the shared RAM UC4 or UC5 (although unlikely if both static RAM tests passed).
+If this fails, it may be a secondary processor failure, or a  problem with another chip on the secondary's address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.  Or a problem with the shared RAM UC4 or UC5 (although unlikely if both static RAM tests passed).
 
-It may also be a problem with the shared data bus.  As the data bus is shared between both the 6504 and 6502, be suspicious of a shared bug problem if, as well as a 6504 failure, you also get a [static RAM failure](#️static-ram-check-failed).
+It may also be a problem with the shared data bus.  As the data bus is shared between both CPUs, be suspicious of a shared bug problem if, as well as a secondary failure, you also get a [static RAM failure](#️static-ram-check-failed).
 
-### ⚠️Failed to pause 6504
+### ⚠️Failed to pause secondary
 
-If this fails, it signifies either a 6504 failure, or possibly another component on the 6504 address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.
+If this fails, it signifies either a secondary processor failure, or possibly another component on the secondary address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.
 
-It may also be a problem with the shared data bus.  As the data bus is shared between both the 6504 and 6502, be suspicious of a shared bug problem if, as well as a 6504 failure, you also get a [static RAM failure](#️static-ram-check-failed).
+It may also be a problem with the shared data bus.  As the data bus is shared between both CPUs, be suspicious of a shared bug problem if, as well as a secondary failure, you also get a [static RAM failure](#️static-ram-check-failed).
 
 ### 🆔Reporting Device ID
 
@@ -428,7 +428,7 @@ The 4040 PCB layout is reproduced here to aid with identifying the components th
 
 ## 🗺️Memory Layout
 
-See [🗺️Memory Layout](./docs/technical/4040-memory-layout.md) for a detailed memory layout of the 6502 and 6504 processors, including the address space and the components which are mapped to each address.
+See [🗺️Memory Layout](./docs/technical/4040-memory-layout.md) for a detailed memory layout of both processors, including the address space and the components which are mapped to each address.
 
 ## ❓Frequently Asked Questions
 
@@ -442,13 +442,13 @@ This section lists some potential future enhancements:
 
 📡 Ability to send diagnostics information via IEEE-488 port using a serial protocol and just lines available on UE1 - to get around issues with UC1.
 
-🧠 Additional 6504 and supporting component tests.
+🧠 Additional secondary processor and supporting component tests.
 
-💽 Test drive mechanisms, which are driven via the 6504.
+💽 Test drive mechanisms, which are driven via the secondary processor - partially implemented.
 
-👂 Allow drive tests to be manually driven via IEEE-488 LISTEN commands.  See [docs/specs/LISTEN-commands.md](docs/specs/LISTEN-commands.md) for a proposal.
+👂 Allow drive tests to be manually driven via IEEE-488 LISTEN commands.  Partially implemented.
 
-📈 Support other drives, including 8050 and 8250.
+📈 Support other drives, including 8050 and 8250.  Partially implemented.
 
 ## 🤓Fun Facts
 

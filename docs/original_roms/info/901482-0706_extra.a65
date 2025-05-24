@@ -1,0 +1,12 @@
+; 901482-07 and 901482-06 Commodore 8050 Disk Drive ROMs
+;
+; The code is Copyright (c) Commodore Business Machines, Inc.
+;
+; Disassembly and comments are Copyright (c) 2025 Piers Finlayson.
+;
+; The ROM was sourced from:
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/8050/901482-07.bin
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/8050/901482-06.bin
+;
+; Unlike 901887-01 and 901888-01, this ROM (these ROMs) only support the 8050,
+; not the 8250.

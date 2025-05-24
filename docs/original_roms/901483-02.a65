@@ -1,15 +1,15 @@
-; 901483-02 Commodore 8050 Disk Drive ROM
+; 901483-04 Commodore 8050 Disk Drive ROM
 ;
 ; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
-; Disassembly and comts are Copyright (c) 2025 Piers Finlayson.
+; Disassembly and comments are Copyright (c) 2025 Piers Finlayson.
 ;
 ; The ROM was sourced from:
-; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/8050/901483-02.bin
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/8050/901483-04.bin
 
 ; da65 V2.19 - Git 162bc6b30
-; Created:    2025-05-24 14:08:01
-; Input file: bin/901483-02.bin
+; Created:    2025-05-24 16:05:56
+; Input file: roms/901483-02.bin
 ; Page:       1
 
 
