@@ -12,7 +12,6 @@ The binaries themselves are located in [./roms](./roms). They can also be found 
 
 ### 1️⃣DOS1 - 2040/3040
 
-
 | Processor | Location | Part Number | Address | Size | Purpose | Source | Notes |
 |-----------|----------|-------------|---------|------|---------|--------|-------|
 | Primary | 2332 UL1 & UH1 | 901468-06/07 | $E000-$FFFF | 8KB | 6502 firmware | [6502 ROM](./901468-06-07.a65) | |

@@ -8,7 +8,7 @@ Got a question?  See the [FAQ](./FAQ.md).
 
 This project provides a diagnostics ROM for early Commodore disk drives (2040, 3040, 4040, 8050 and 8250). It performs memory and other tests and provides visual feedback through the drive's LEDs and, if functional, via the IEEE-488 port.
 
-Note that the 8050 and 8250 support is untested as of writing, although the internal architecture is almost identical to the 2040/3040/4040, with the exception of ROM location and size (which is taken account of).
+Note that the 8050 and 8250 support is partially as of writing, although the internal architecture is almost identical to the 2040/3040/4040, with the exception of ROM location and size (which is taken account of).
 
 ## ✨Features
 
@@ -17,12 +17,13 @@ Note that the 8050 and 8250 support is untested as of writing, although the inte
 - 🔍 Identifies precisely which static RAM chip(s) have failed
 - 💡 Visual status indication and failed components via drive LEDs
 - 🆔 Detects and reports the configured hardware device ID (8, 9, etc)
-- 🔌 Reports diagnostic results to computer if IEEE-488 is operational 
+- 🔌 Reports diagnostic results to computer if IEEE-488 is operational
 - 🖥️ Tests presence and functioning of secondary on-board CPU
-- 🔄 Provides fine-grained drive and head motor controls from a PET or PC if IEEE-488 is operational 
+- 🔄 Provides fine-grained drive and head motor controls from a PET or PC if IEEE-488 is operational
 - 🔀 Can be run as replacement for main DOS 1 or DOS 2 ROMs or alongside stock DOS 1 ROMs
 
 ## 📝Contents
+
 - [📥Installation](#installation)
 - [🚀Usage](#usage)
 - [💡LED Indicators](#led-indicators)
@@ -32,9 +33,9 @@ Note that the 8050 and 8250 support is untested as of writing, although the inte
 - [🔄Motor Controls via IEEE-488](#motor-controls-via-ieee-488)
 - [🔨Building From Source](#building-from-source)
 - [📐Schematics and PCB Layouts](#schematics-and-pcb-layouts)
-- [🗺️Memory Layout](#memory-layout)
+- [🗺️Memory Layout](#️memory-layout)
+- [❓FAQ](#frequently-asked-questions)
 - [🚧Future Enhancements](#future-enhancements)
-- [❓FAQ](#faq)
 - [🤓Fun Facts](#fun-facts)
 - [📜License](#license)
 - [🤝Contributing](#contributing)
@@ -73,7 +74,7 @@ If you are unsure whether your upper, $F000, ROM, located at UH1 is functional, 
 
 In particular, this is helpful if you have all three LEDs stay lit on your drive when booting with the original ROM.  If they remain lit with this ROM (assuming you correctly built, flashed and installed it) you have a non-ROM issue preventing the ROM code from being executed.  If this ROM runs, then one of your stock ROMs is probably faulty.
 
-For a first test, you are best off removing the $E000 ROM (UL1) before running this diagnostics ROM at $F000, in case $E000/UL1 is faulty and causes address or data bus issues. 
+For a first test, you are best off removing the $E000 ROM (UL1) before running this diagnostics ROM at $F000, in case $E000/UL1 is faulty and causes address or data bus issues.
 
 ### 🔄$D000 ROM, UJ1 - 2040/3040/4040
 
@@ -81,7 +82,7 @@ If you believe your stock $F000 and $E000 ROMs are functional (the three LEDs go
 
 If your drive has a $D000 ROM already installed then your current ROMs likely don't not support a diagnostic ROM at $D000, so replace your $F000 with the $F000 version of this ROM instead.  This is typical of the 4040, although 2040 and 3040s may have been upgraded to a three ROM configuration.
 
-DOS 1 firmware version 901468/06/07 come as a 2 ROM set and support at $D000 UJ1 diagnostics ROM being installed. 
+DOS 1 firmware version 901468/06/07 come as a 2 ROM set and support at $D000 UJ1 diagnostics ROM being installed.
 
 DOS 2 firmware versions 901468-11/12/13 and 14/15/16 come as a 3 ROM set.
 
@@ -90,6 +91,7 @@ When running as the $D000 ROM the zero page test within this ROM is skipped - as
 ## 💡LED Indicators
 
 There are two distinct phases to the ROM's operation:
+
 - [▶️ Running tests](#running-tests)
 - [📊 Reporting results](#reporting-results)
 
@@ -100,14 +102,14 @@ After boot and during this phase, the ERR LED is not used.  The other LEDs show 
 | LED Pattern | Meaning |
 |-------------|---------|
 | All LEDs including ERR on | [Device coming out of reset](#device-coming-out-of-reset) |
-| All LEDs remain on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) | 
+| All LEDs remain on | [Diagnostics ROM failed to run](#diagnostics-rom-failed-to-run) |
 | ERR LED goes out, followed by DR0/DR1 lights | [Testing zero page](#testing-zero-page) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | No visual indication | [Retrieving device ID](#retrieving-device-id) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | DR0 and DR1 flash alternately | [Static RAM Test #1](#static-ram-test) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
-| No visual indication | [Checking 6504 booted](#️checking-the-6504-booted) |
+| No visual indication | [Checking 6504 booted](#checking-the-6504-booted) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
 | No visual indication | [Attempted to pause 6504](#️pausing-the-6504) |
 | Both drive lights blink on then off | [Completed a test, moving onto next](#️moving-to-next-test) |
@@ -117,6 +119,7 @@ After boot and during this phase, the ERR LED is not used.  The other LEDs show 
 ### 📢Reporting Results
 
 After the above tests have run the drive goes through a reporting sequence, and repeats it forever:
+
 - Report any zero page error with UC1
 - Report any static RAM errors
 - Report any 6504 errors
@@ -152,6 +155,7 @@ The two drive LEDs are solidly lit while testing the zero page.  However, as thi
 This may appear as if the ERR goes out, very shortly followed by the DR0 and DR1 LEDs.
 
 The zero page test starts with the 128 bytes from UE1, and then tests the 128 bytes from UC1.  If the UE1 test fails you get either:
+
 - ERR and DR1 LEDs blinking fast, if the UE1 works enough to control the LEDs
 - all three LEDs remaining on (as the diagnostics ROM can't turn them off with a failed UE1).
 
@@ -166,10 +170,12 @@ There is no visual indication when it happens and it is very fast - the ROM just
 ### 🧪Static RAM Test
 
 Two static RAM tests are performed:
+
 - The first tests $1100-$13FF, $2000-$23FF, $3000-$33FF and $4000-43FF.
-- THe second, which runs after checking the 6504 and attempting to take over control over it, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the 6504, to take it over.  We try to take the 6504 over before testing this range, so we avoid crashing or confusing the 6504 by changing RAM from under it. 
+- THe second, which runs after checking the 6504 and attempting to take over control over it, tests $1000-$10FF.  This range, which shares the chips with $1100-$13FF, is used to communicate with the 6504, to take it over.  We try to take the 6504 over before testing this range, so we avoid crashing or confusing the 6504 by changing RAM from under it.
 
 The DR0 and DR1 LEDs illuminate during each page (256 byte) test, with the LED switching for each page of RAM is tested.
+
 - For the first static RAM test you should see them blinking alternating back and forth, for a total of 15 illuminations.
 - For the second, you will just set one of the LEDs (DR0) light, briefly.
 
@@ -221,6 +227,7 @@ Most likely 6502 is faulty so didn't boot, or this ROM is corrupted, or UE1 6532
 First of all try swaping your UE1 and UC1 chips around to see if the other 6532 RIOT chip works.  Next try replacing the 6502.
 
 If the problem remains, you probably have an issue with either
+
 - the main RESET circuit
 - a failed 74LS157 (UC3/UD3/UE3/UF3) corrupting the address bus
 - other corruption on either the 6502 address bus or shared data bus
@@ -230,11 +237,11 @@ As this diagnostics ROM requires address and data bus communication between the 
 
 ### ❌UE1 zero page test failed
 
-If, immediately after turning on the device, and the 3 lights going out you get a blinking ERR LED and DR1 LED, then the UE1 zero page RAM is bad, but the UE1 IO lines work (hence the ability to flash the LEDs).  This may indicate a bad connnection or trace associated with UE1 rather than a chip failure. 
+If, immediately after turning on the device, and the 3 lights going out you get a blinking ERR LED and DR1 LED, then the UE1 zero page RAM is bad, but the UE1 IO lines work (hence the ability to flash the LEDs).  This may indicate a bad connnection or trace associated with UE1 rather than a chip failure.
 
 ### ⚠️UC1 zero page test failed
 
-If the UC1 zero page test fails the diagnostic ROM can and will continue to run and report on all of its tests. 
+If the UC1 zero page test fails the diagnostic ROM can and will continue to run and report on all of its tests.
 
 This error is indicated at the reporting stage with the ERR LED on, and the DR0 LED flashig 5 times.
 
@@ -253,7 +260,7 @@ In this scenario the ERR LED is lit while either the DR1 or DR0 LED flashes.  Al
 | DR1 | 3 | UE5 |
 | DR1 | 4 | UF5 |
 
-If you see failures across all of your chips, it may instead be one or more failed 74LS157s UC3/UD3/UE3/UF3 - as these multiplex the address lines from the 6502 and 6504 to the RAM chips.  Or, it may be a bus problem - try removing the 6504 (UH3), 6530 (UK3) and 6522 (UM3) from the board and re-running the test.  This isolates those chip as potentially conflicting with the shared data bus.  Of course, you will then get a 6504 error reported. 
+If you see failures across all of your chips, it may instead be one or more failed 74LS157s UC3/UD3/UE3/UF3 - as these multiplex the address lines from the 6502 and 6504 to the RAM chips.  Or, it may be a bus problem - try removing the 6504 (UH3), 6530 (UK3) and 6522 (UM3) from the board and re-running the test.  This isolates those chip as potentially conflicting with the shared data bus.  Of course, you will then get a 6504 error reported.
 
 ### ⚠️6504 failed to boot
 
@@ -285,9 +292,9 @@ An explanation of the various types of information follows.  While [📟 Last Op
 
 ⚠️In particular:
 
-* ⚠️Only use command `E` (end) with caution, and immediately after a `B` (bump) command.  Otherwise the drive will perform a "reverse bump", stopping at the inside of the disk.  This may damage the unit.
+- ⚠️Only use command `E` (end) with caution, and immediately after a `B` (bump) command.  Otherwise the drive will perform a "reverse bump", stopping at the inside of the disk.  This may damage the unit.
 
-* ⚠️If you have a disk inserted in your drive, ensure the spindle motor is spinning before moving the heads.
+- ⚠️If you have a disk inserted in your drive, ensure the spindle motor is spinning before moving the heads.
 
 Like [Reporting via IEEE-488](#reporting-via-ieee-488), once the diagnostics tests have been run, and flash codes are being used to report diagnostics results, the diagnostic ROM will start an IEEE-488 stack on the disk drive.  It can be connected to by an IEEE-488 controller (such as a PET) via the hardware configured device ID, which is [reported via flash codes](#reporting-device-id).
 
@@ -361,7 +368,7 @@ A one-line summary of whether the drive passed all tests, or not.
 
 ### 📊Detailed Diagnostics Results
 
-Detailed diagnostics results are reported, including whether UC1 failed the zero-page test and the location of any RAM chips that failed the RAM test. 
+Detailed diagnostics results are reported, including whether UC1 failed the zero-page test and the location of any RAM chips that failed the RAM test.
 
 ## 🔨Building From Source
 
@@ -397,6 +404,7 @@ make d000   # Builds the version to be installed alongside the stock DOS 1 ROMs
 ```
 
 This produces these ROM images:
+
 - `xx40_ieee_diag_f000.bin` - For 2040/3040/4040 at $F000
 - `xx40_ieee_diag_d000.bin` - For 2040/3040/4040 at $D000
 - `8x50_ieee_diag_e000.bin` - For 8050/8250 at $E000
@@ -404,6 +412,7 @@ This produces these ROM images:
 ### 🏗️Build Process
 
 The build process is two stage:
+
 - First, the code which will be copied to the disk drive's secondary CPU, and which this ROM will cause to be executed, is compiled and linked.
 - Second, the two variants of this ROM (one to be loaded at $F000, the other to be installed alongside the stock ROMs a $D000) are compiled.  At this point, the secondary CPU's binary is included.  These two ROM variants are then linked producing the binaries.
 
@@ -443,7 +452,7 @@ This section lists some potential future enhancements:
 
 ## 🤓Fun Facts
 
-### 🦄Official Commodore Diagnostic ROM 
+### 🦄Official Commodore Diagnostic ROM
 
 It appears, from the fact that the stock DOS 1 ROMs support a $D000 diagnostics ROM, that there was an official Commodore diagnostics ROM which could be installed alongside the main DOS 1 ROMs to aid with problem diagnosis.  I've not been able to find a copy of that ROM, hence building my own to help me fix 2040, 3040 and 4040 drives.
 
