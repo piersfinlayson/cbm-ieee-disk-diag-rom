@@ -2,7 +2,7 @@
 
 This directory contains some of the original ROM code, disassembled with comments.
 
-The binaries themselves are located in [./bin](./bin). They can also be found at:
+The binaries themselves are located in [./roms](./roms). They can also be found at:
 
 - [2040/3040/4040](http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/4040/index.html)
 
