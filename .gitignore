@@ -3,3 +3,4 @@
 *.prg
 *.d64
 build/*
+!docs/original_roms/roms/*.bin
