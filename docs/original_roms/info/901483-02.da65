@@ -1,0 +1,31 @@
+GLOBAL {
+    STARTADDR       $FC00;
+    PAGELENGTH      0;
+    CPU             "6502";
+};
+
+SEGMENT     { START $FC00;  END $FFFF;  NAME "firmware"; };
+
+RANGE   { START $FFFA;  END $FFFF;  TYPE AddrTable; };
+
+# VIA 6522 registers
+LABEL { NAME "VIA_VB"; ADDR $0040; COMMENT "VIA output register B"; };
+LABEL { NAME "VIA_DIN"; ADDR $0041; COMMENT "VIA output register A"; };
+LABEL { NAME "VIA_VDDRB"; ADDR $0042; COMMENT "VIA data direction register B"; };
+LABEL { NAME "VIA_T1LL"; ADDR $0044; COMMENT "VIA Write Latch (+ read counter)"; };
+LABEL { NAME "VIA_TIMER"; ADDR $0045; COMMENT "VIA timer"; };
+LABEL { NAME "VIA_ACR"; ADDR $004B; COMMENT "VIA Auxiliary Control Register"; };
+LABEL { NAME "VIA_PCR"; ADDR $004C; COMMENT "VIA Peripheral Control Register"; };
+LABEL { NAME "VIA_IFR"; ADDR $004D; COMMENT "Interrupt Flag Register"; };
+LABEL { NAME "VIA_IER"; ADDR $004E; COMMENT "Interrupt Enable Register"; };
+
+# RIOT 6530 registers  
+LABEL { NAME "RIOT_DOUT"; ADDR $0080; COMMENT "6530 RIOT output register"; };
+LABEL { NAME "RIOT_EOUT"; ADDR $0081; COMMENT "6530 RIOT output register"; };
+LABEL { NAME "RIOT_PB"; ADDR $0082; COMMENT "RIOT port B"; };
+LABEL { NAME "RIOT_DDRB"; ADDR $0083; COMMENT "RIOT data direction register B"; };
+LABEL { NAME "x8F"; ADDR $008F; COMMENT "Unknown"; };
+
+LABEL { ADDR $FFFA;     NAME "nmi_vector"; };
+LABEL { ADDR $FFFC;     NAME "reset_vector"; };
+LABEL { ADDR $FFFE;     NAME "irq_vector"; };

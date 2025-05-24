@@ -1,5 +1,5 @@
-; This source code is a disaseembly of a Commodore 2040/3040/4040 disk drive
-; 6502 DOS 1 ROM, located at UL1 ($F000-$FFF) and UH1 ($E000-EFFF).
+; This source code is a disaseembly of a Commodore 2040/3040 disk drive main
+; processor's DOS 1 ROM, located at UL1 ($F000-$FFF) and UH1 ($E000-EFFF).
 ; 
 ; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
@@ -7,6 +7,22 @@
 ; http://www.6502.org/users/andre/petindex/drives/roms/
 ;
 ; New comments are Copyright (c) 2025 Piers Finlayson.
+;
+; The original disassembly was done by Andre Fachat.
+;
+; The ROM binaries can be sourced from:
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/4040/901468-06.bin
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/4040/901468-07.bin
+;
+; This disassembly is of the combined image:
+; - 901468-06 $E000-$EFFF
+; - 901468-07 $F000-$FFFF
+;
+; These ROMs are compatible only with 901466-01/02 not 901466-04, which are
+; ROMs for the secondary processor (a 6504).  901466-01/02 are DOS 1, whereas
+; 901466-04 is DOS 2.  To upgrade a DOS 1 2040 or 3040 you must replace both
+; primary processor's ROMs and install the 3 new DOS 2 ROMs (901468-11/12/13
+; or 901468-14/15/16) and also 901466-01/02 with 901466-04.
 
  *=$E000
 

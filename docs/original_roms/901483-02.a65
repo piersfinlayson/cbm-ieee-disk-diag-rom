@@ -1,0 +1,596 @@
+; 901483-02 Commodore 8050 Disk Drive ROM
+;
+; The code is Copyright (c) Commodore Business Machines, Inc.
+;
+; Disassembly and comts are Copyright (c) 2025 Piers Finlayson.
+;
+; The ROM was sourced from:
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/8050/901483-02.bin
+
+; da65 V2.19 - Git 162bc6b30
+; Created:    2025-05-24 14:08:01
+; Input file: bin/901483-02.bin
+; Page:       1
+
+
+        .setcpu "6502"
+
+L0017           := $0017
+VIA_VB          := $0040                        ; VIA output register B
+VIA_DIN         := $0041                        ; VIA output register A
+VIA_VDDRB       := $0042                        ; VIA data direction register B
+VIA_T1LL        := $0044                        ; VIA Write Latch (+ read counter)
+VIA_TIMER       := $0045                        ; VIA timer
+VIA_ACR         := $004B                        ; VIA Auxiliary Control Register
+VIA_PCR         := $004C                        ; VIA Peripheral Control Register
+VIA_IFR         := $004D                        ; Interrupt Flag Register
+VIA_IER         := $004E                        ; Interrupt Enable Register
+RIOT_DOUT       := $0080                        ; 6530 RIOT output register
+RIOT_EOUT       := $0081                        ; 6530 RIOT output register
+RIOT_PB         := $0082                        ; RIOT port B
+RIOT_DDRB       := $0083                        ; RIOT data direction register B
+x8F             := $008F                        ; Unknown
+L0500           := $0500
+L9B02           := $9B02
+
+.segment        "firmware": absolute
+
+        .byte   $14
+        .byte   $FC
+        .byte   $A7
+        .byte   $FE
+LFC04:  ldy     #$02
+LFC06:  sty     $0400
+LFC09:  lda     $0400
+        bne     LFC09
+        dey
+        bne     LFC06
+        jmp     L0500
+
+LFC14:  ldy     #$0E
+        lda     #$07
+        sta     $26
+LFC1A:  cli
+        lda     $0403,y
+        bpl     LFC52
+        cmp     #$D0
+        bne     LFC28
+        tya
+        jmp     LFCCC
+
+LFC28:  sei
+        and     #$01
+        tax
+        sta     $13
+        lda     VIA_VB
+        and     LFFD1,x
+        beq     LFC46
+        eor     VIA_VB
+        sta     VIA_VB
+        lda     $01
+        adc     $0401
+        sta     $02,x
+        lda     $04,x
+        ora     #$80
+        sta     $04,x
+LFC46:  lda     $04,x
+        bmi     LFC4F
+        jsr     LFFC6
+        lda     $04,x
+LFC4F:  asl     a
+        bpl     LFC57
+LFC52:  dey
+        bpl     LFC1A
+        bmi     LFC14
+LFC57:  cli
+        ldy     #$0E
+        sty     $20
+LFC5C:  jsr     LFCEB
+        bmi     LFC81
+LFC61:  dec     $20
+        bpl     LFC5C
+        ldy     $28
+        jsr     LFCED
+        lda     $29
+        sei
+        sta     $06,x
+        lda     $04A3
+        sta     $23,x
+        lda     #$40
+        ora     $04,x
+        sta     $04,x
+        lda     ($19),y
+        sta     $21,x
+LFC7E:  jmp     LFC14
+
+LFC81:  and     #$01
+        cmp     $13
+        bne     LFC61
+        lda     $21,x
+        beq     LFC98
+        sec
+        sbc     ($19),y
+        beq     LFC98
+        sta     $29
+        lda     $20
+        sta     $28
+        bpl     LFC61
+LFC98:  ldx     #$04
+        lda     ($19),y
+        sta     $14
+LFC9E:  cmp     $04AF,x
+        dex
+        bcs     LFC9E
+        lda     $0499,x
+        sta     $16
+        txa
+        asl     a
+        sta     $09
+        lda     RIOT_PB
+        and     #$F8
+        ora     $09
+        ora     $13
+        sta     RIOT_PB
+        ldx     $13
+        lda     $04,x
+        bmi     LFC7E
+        lda     $1F
+        cmp     #$40
+        beq     LFCD4
+        cmp     #$60
+        beq     LFCCA
+        jmp     LFE2D
+
+LFCCA:  lda     $20
+LFCCC:  clc
+        adc     #$05
+        sta     $18
+        jmp     (L0017)
+
+LFCD4:  sei
+        lda     #$40
+        sta     $04,x
+        lda     #$01
+        sta     $21,x
+        lda     LFFD3,x
+        ora     VIA_VB
+        sta     VIA_VB
+        lda     #$5A
+        sta     $06,x
+        jmp     LFE72
+
+LFCEB:  ldy     $20
+LFCED:  lda     $0403,y
+        pha
+        and     #$78
+        sta     $1F
+        tya
+        asl     a
+        asl     a
+        asl     a
+        adc     #$21
+        sta     $19
+        ldy     #$02
+        pla
+        rts
+
+LFD01:  ldy     #$03
+        lda     ($19),y
+        sta     $11
+LFD07:  lda     #$7F
+        sta     $0D
+        lda     $11
+        clc
+        adc     #$02
+        cmp     $16
+        bcc     LFD16
+        lda     #$00
+LFD16:  sta     $15
+        ldx     #$0E
+        stx     $20
+        ldx     #$FF
+LFD1E:  jsr     LFCEB
+        bpl     LFD4F
+        sta     $09
+        and     #$01
+        cmp     $13
+        bne     LFD4F
+        lda     ($19),y
+        cmp     $14
+        bne     LFD4F
+        lda     $1F
+        cmp     #$60
+        beq     LFD4F
+        iny
+        sec
+        lda     ($19),y
+        sbc     $15
+        bpl     LFD42
+        clc
+        adc     $16
+LFD42:  cmp     $0D
+        bcs     LFD4F
+        sta     $0D
+        lda     $20
+        tax
+        adc     #$05
+        sta     $18
+LFD4F:  dec     $20
+        bpl     LFD1E
+        txa
+        bpl     LFD59
+        jmp     LFC14
+
+LFD59:  stx     $04A0
+        stx     $20
+        jsr     LFCEB
+        stx     $26
+        lda     $1F
+        cmp     #$00
+        bne     LFDA0
+        jsr     LFD91
+LFD6C:  bvc     LFD6C
+        clv
+        lda     VIA_DIN
+        sta     (L0017),y
+        iny
+        bne     LFD6C
+LFD76:  bvc     LFD76
+        lda     VIA_DIN
+        sta     $25
+        lda     #$10
+        bit     VIA_IFR
+        bne     LFD8E
+        jsr     LFF02
+        cmp     $25
+        bne     LFD8C
+        jmp     LFE72
+
+LFD8C:  lda     #$05
+LFD8E:  jmp     LFEA7
+
+LFD91:  jsr     LFE7D
+        jsr     LFECE
+        cmp     #$07
+        beq     LFD9F
+        lda     #$04
+        bne     LFDAF
+LFD9F:  rts
+
+LFDA0:  cmp     #$10
+        bne     LFE0D
+        jsr     LFF02
+        sta     $25
+        lda     RIOT_PB
+        and     #$08
+        beq     LFDB2
+LFDAF:  jmp     LFEA7
+
+LFDB2:  jsr     LFE7D
+        ldx     $049D
+        dex
+LFDB9:  bvc     LFDB9
+        clv
+        dex
+        bne     LFDB9
+        lda     #$DE
+        sta     VIA_PCR
+        lda     #$DC
+        ldx     #$FF
+        jsr     LFEF9
+        jsr     LFEF9
+LFDCD:  bvc     LFDCD
+        clv
+        sta     VIA_PCR
+        lda     #$07
+        sta     RIOT_DOUT
+        ldy     #$00
+LFDD8:  bvc     LFDD8
+        clv
+        lda     (L0017),y
+        sta     RIOT_DOUT
+        iny
+        bne     LFDD8
+        ldx     $25
+LFDE4:  bvc     LFDE4
+        clv
+        stx     RIOT_DOUT
+        jsr     LFEFC
+        ldx     #$00
+        jsr     LFEFC
+        lda     #$FC
+LFDF3:  bvc     LFDF3
+        clv
+        sta     VIA_PCR
+        ldx     #$28
+LFDFA:  jsr     LFEF3
+        dex
+        bne     LFDFA
+        ldy     $20
+        lda     $0403,y
+        eor     #$30
+        sta     $0403,y
+        jmp     LFD01
+
+LFE0D:  cmp     #$20
+        bne     LFE27
+        jsr     LFD91
+LFE14:  bvc     LFE14
+        clv
+        lda     VIA_DIN
+        cmp     (L0017),y
+        bne     LFE23
+        iny
+        bne     LFE14
+        jmp     LFD76
+
+LFE23:  lda     #$07
+        bne     LFE7A
+LFE27:  jsr     LFE7D
+        jmp     LFE72
+
+LFE2D:  ldx     #$5A
+        jsr     LFEA1
+        ldy     #$04
+LFE34:  bvc     LFE34
+        clv
+        lda     VIA_DIN
+        sta     $0E,y
+        dey
+        bpl     LFE34
+        ldy     #$04
+        lda     #$00
+LFE43:  eor     $0E,y
+        dey
+        bpl     LFE43
+        cmp     #$00
+        bne     LFE75
+        ldx     $13
+        lda     $10
+        sta     $21,x
+        lda     $1F
+        cmp     #$30
+        beq     LFE68
+        ldy     #$01
+LFE5B:  lda     ($19),y
+        cmp     $0E,y
+        bne     LFE78
+        dey
+        bpl     LFE5B
+        jmp     LFD07
+
+LFE68:  ldy     #$04
+LFE6A:  lda     $0E,y
+        sta     ($19),y
+        dey
+        bpl     LFE6A
+LFE72:  lda     #$01
+        .byte   $2C
+LFE75:  lda     #$09
+        .byte   $2C
+LFE78:  lda     #$0B
+LFE7A:  jmp     LFEA7
+
+LFE7D:  ldy     #$03
+        lda     #$00
+LFE81:  eor     ($19),y
+        dey
+        bpl     LFE81
+        ldy     #$04
+        sta     ($19),y
+        ldy     $20
+        ldx     #$5A
+LFE8E:  jsr     LFEA1
+        ldy     #$04
+LFE93:  bvc     LFE93
+        clv
+        lda     VIA_DIN
+        cmp     ($19),y
+        bne     LFE8E
+        dey
+        bpl     LFE93
+        iny
+        rts
+
+LFEA1:  cli
+        dex
+        bne     LFEC6
+        lda     #$02
+LFEA7:  ldy     $20
+        sta     $0403,y
+        pha
+        lda     $01
+        ldx     $13
+        adc     $0402
+        sta     $02,x
+        jsr     LFF0B
+        pla
+        lsr     a
+        bne     LFEC0
+        jmp     LFD01
+
+LFEC0:  ldx     #$3F
+        txs
+        jmp     LFC14
+
+LFEC6:  jsr     LFECE
+        cmp     #$08
+        bne     LFEA1
+        rts
+
+LFECE:  jsr     LFF0B
+        sei
+        lda     #$D0
+        sta     VIA_TIMER
+        lda     #$03
+LFED8:  bit     VIA_TIMER
+        bpl     LFEA7
+        bit     VIA_VB
+        bmi     LFED8
+        ldy     $04A5
+LFEE3:  bit     VIA_VB
+        bmi     LFECE
+        dey
+        bne     LFEE3
+        lda     VIA_VB
+        ora     #$40
+        sta     VIA_VB
+        bit     VIA_DIN
+        clv
+LFEF3:  bvc     LFEF3
+        clv
+        lda     VIA_DIN
+        rts
+
+LFEF9:  jsr     LFEFC
+LFEFC:  bvc     LFEFC
+        clv
+        stx     RIOT_DOUT
+        rts
+
+LFF02:  lda     #$00
+        tay
+LFF05:  eor     (L0017),y
+        iny
+        bne     LFF05
+        rts
+
+LFF0B:  lda     VIA_VB
+        and     #$BF
+        sta     VIA_VB
+        rts
+
+LFF12:  pha
+        txa
+        pha
+        lda     $0400
+        sta     x8F
+        inc     $00
+        lda     $00
+        and     #$0F
+        bne     LFF24
+        inc     $01
+LFF24:  ldx     #$01
+        lda     RIOT_PB
+        pha
+        ora     #$01
+LFF2B:  sta     RIOT_PB
+        lda     RIOT_PB
+        and     #$08
+        cmp     $04A8,x
+        sta     $04A8,x
+        beq     LFF3E
+        lda     #$01
+        sta     $04A6,x
+LFF3E:  lda     $01
+        cmp     $02,x
+        bne     LFF55
+        asl     $04,x
+        bcs     LFF4F
+        lda     LFFD1,x
+        ora     VIA_VB
+        sta     VIA_VB
+LFF4F:  jsr     LFFC6
+        clc
+        ror     $04,x
+LFF55:  lda     $06,x
+        bne     LFF76
+        lda     $04A1,x
+        beq     LFF6D
+        sta     $06,x
+        pha
+        lda     #$01
+        sta     $23,x
+        lda     #$00
+        sta     $04A1,x
+        pla
+        bne     LFF76
+LFF6D:  lda     $04,x
+        and     #$BF
+        sta     $04,x
+        jmp     LFFB6
+
+LFF76:  asl     a
+        bcs     LFF90
+        dec     $23,x
+        bne     LFF84
+        lda     $04A3
+        sta     $23,x
+        dec     $06,x
+LFF84:  lda     VIA_VB
+        and     LFFD3,x
+        sec
+        sbc     LFFCF,x
+        jmp     LFFA4
+
+LFF90:  dec     $23,x
+        bne     LFF9B
+        lda     $04A3
+        sta     $23,x
+        inc     $06,x
+LFF9B:  lda     VIA_VB
+        and     LFFD3,x
+        clc
+        adc     LFFCF,x
+LFFA4:  and     LFFD3,x
+        sta     $08
+        lda     VIA_VB
+        and     LFFCD,x
+        ora     $08
+        sta     VIA_VB
+        lda     RIOT_PB
+        and     #$FE
+LFFB6:  dex
+        bmi     LFFBC
+        jmp     LFF2B
+
+LFFBC:  lsr     $04AB
+        pla
+        sta     RIOT_PB
+        pla
+        tax
+        pla
+        rti
+
+LFFC6:  lda     $01
+        sta     $02,x
+        dec     $02,x
+        rts
+
+LFFCD:  .byte   $F3
+        .byte   $FC
+LFFCF:  .byte   $04
+        .byte   $01
+LFFD1:  .byte   $20
+        .byte   $10
+LFFD3:  .byte   $0C
+        .byte   $03
+        sec
+        lda     VIA_TIMER
+        sbc     $028F
+        lda     VIA_T1LL
+        sbc     $028E
+        bcs     reset_vector
+        ldy     #$05
+LFFE4:  lda     $0348,y
+        cmp     (VIA_VDDRB),y
+        bne     irq_vector
+        dey
+        bpl     LFFE4
+        ldy     #$06
+        lda     (VIA_VDDRB),y
+        sta     $0294
+        iny
+        lda     (VIA_VDDRB),y
+        .byte   $8D
+        .byte   $95
+nmi_vector:
+        .addr   L9B02
+reset_vector:
+        .addr   LFC04
+irq_vector:
+        .addr   LFF12
+
+; End of "firmware" segment
+.code
+

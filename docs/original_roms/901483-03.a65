@@ -1,0 +1,828 @@
+; This is 901483-03.bin - from an 8050 with Micropolis disk drive mechanisms 
+;
+; Comments Copyright (C) 2025 Piers Finlayson <piers@piers.rocks>
+;
+; Comments were created with assistance from AI, so take with a pinch of salt!
+;
+; This file is the 1KB secondary processor's firmware from the 6530 IC.  It
+; differs substantially in its operation from the 2040/3040/4040 secondary
+; processor firmware, both DOS 1 and DOS 2 versions (901466-02/04).
+;
+; The 2040/3040/4040 secondary processor firmware is mostly self contained - it
+; boots, in the case of the DOS 2 version does a zero page test, initializes
+; zero page and shared RAM, and then runs a job checking loop, waiting for
+; commands from the primary processor.
+;
+; This firmware, on the other hand, does very, very little off its own bat.
+; It sets one byte of shared RAM ($0400) to 2, waits for it to be set to 0,
+; sets it to 2 again, waits for it to be set to 0 again, and then jumps to,
+; which is a shared RAM address that the primary processor has copied code to.
+; That code does a bunch of self testing and initialization, and provides the
+; main operating loop for the secondary processor.  This firmware primarily
+; contains
+; - a bunch of utilities used by code dynamically loaded by the primary
+; - the interrupt handler routine, which runs on a timer (triggered by the
+;   6530), which does stuff like ensure the stepper motor steps to the desired
+;   track.
+;
+; This change was presumably instigated to make it much easier to update the
+; disk drive - by having less critical code in ths 6530 (mask programmed) ROM,
+; but instead having it in the (more easily sourced) primary processor's ROMs.
+; It probably helped that the 8050/8250 primary processor ROMs had a total of
+; 16KB of space, vs 12KB on the 2040/3040/4040.
+;
+
+
+; da65 V2.19 - Git 162bc6b30
+; Created:    2025-05-18 16:34:03
+; Input file: ./901483-03.bin
+; Page:       1
+
+        .setcpu "6502"
+
+L0017           := $0017
+L0500           := $0500
+
+; Once the secondary processor's initialization routine has completed (which
+; comes from the primary processor), it does an indirect JMP ($FC00) - which
+; causes it to jump to the code at $FC14 given the below.
+LFC00:
+        .byte   $14
+        .byte   $FC
+
+; This points to another routine - LFEA1.  From the primary processor's code
+; this appears to be on an error - so presumably FEA1 is an error handler.e
+LFC02:
+        .byte   $A1
+        .byte   $FE
+
+; Reset vector jumps to here
+;
+; This code sets $0400 ($1000 for the primary processor) to 2, waits for the
+; primary processor to set it to 0, then sets $0400 to 1 and waits for the
+; primary processor to set it to 0 again.  It then jumps to $500, which the
+; primary processor has presumably loaded with some code to execute.
+;
+; The primary processor at this point appeaars to load "formatcode_2070" to
+; the job site, which beings LDX #$3F, TXS, CLD, which is settings the stack
+; and clearing the decimal mode.  So, it appears, the primary processor is
+; providing code which this processor will run to initialize itself.
+;
+; It then appears to set the entire zero-page/stack with $3F.  It then appears
+; to test address at $3F by incrementing it by 1 256 times and check it's still
+; $3F.  Basically it appears to be running a zero page memory test.
+;
+; I suspect the primary processor has the secondary processor's initialization
+; code because it's only required once - whereas this ROM (being on 1KB)
+; stores the bulk of the code that is actually needed during run-time. 
+LFC04:
+        ldy     #$02
+LFC06:  sty     $0400   ; Store 02 at the start of shared RAM
+LFC09:  lda     $0400   ; Read the value back into A
+        bne     LFC09   ; Wait in loop until primary CPU sets $0400 to 0
+        bne     LFC06   ; This will never be taken (A is already 0 to get here)
+        jmp     L0500   ; Jump to the code copied to RAM by primary CPU
+
+; Main entry point after initialization
+; Scans command buffer at $0403 for commands
+; Processes flags in disk controller status register ($40)
+; Handles device selection and command dispatching
+
+; Command Scanning ($FC14-$FC24)
+; Scans command buffer at $0403 for commands
+; Y register is used as index (0-14) for command buffer scanning
+; Checks command type and branches accordingly
+LFC14:  ldy     #$0E
+LFC16:  cli
+        lda     $0403,y
+        bpl     LFC4E
+        cmp     #$D0
+        bne     LFC24
+        tya
+        jmp     LFCC8
+
+; Device Selection ($FC24-$FC42)
+; Sets device ID in $13 based on command bits
+; Updates device status flags in $40
+; Prepares device parameters for subsequent operations
+LFC24:  sei
+        and     #$01
+        tax
+        sta     $13
+        lda     $40
+        and     LFFD5,x
+        beq     LFC42
+        eor     $40
+        sta     $40
+        lda     $01
+        adc     $0401
+        sta     $02,x
+        lda     $04,x
+        ora     #$80
+        sta     $04,x
+
+; Status Check ($FC42-$FC53)
+; Verifies device is ready for command execution
+; Checks status flags to determine command eligibility
+; Branches to command execution if device is ready
+LFC42:  lda     $04,x
+        bmi     LFC4B
+        jsr     LFFCA
+        lda     $04,x
+LFC4B:  asl     a
+        bpl     LFC53
+LFC4E:  dey
+        bpl     LFC16
+        bmi     LFC14
+
+; Command Dispatch ($FC53-$FC7A)
+; Sets up command parameters from buffer
+; Copies parameters to appropriate device registers
+; Prepares execution environment and dispatches to handler
+LFC53:  cli
+        ldy     #$0E
+        sty     $20
+LFC58:  jsr     LFCE7
+        bmi     LFC7D
+LFC5D:  dec     $20
+        bpl     LFC58
+        ldy     $28
+        jsr     LFCE9
+        lda     $29
+        sei
+        sta     $06,x
+        lda     $04A3
+        sta     $23,x
+        lda     #$40
+        ora     $04,x
+        sta     $04,x
+        lda     ($19),y
+        sta     $21,x
+LFC7A:  jmp     LFC14
+
+; Processes specific commands based on command type in $1F
+; Validates parameters and prepares for operations
+; Handles job queue management and task prioritization
+
+; Parameter Validation ($FC7D-$FC94)
+; Verifies command parameters match selected device
+; Compares command parameters with device capabilities
+; Ensures proper command sequencing
+LFC7D:  and     #$01
+        cmp     $13
+        bne     LFC5D
+        lda     $21,x
+        beq     LFC94
+        sec
+        sbc     ($19),y
+        beq     LFC94
+        sta     $29
+        lda     $20
+        sta     $28
+        bpl     LFC5D
+
+; Command Type Lookup ($FC94-$FCC6)
+; Determines command type from buffer value
+; Sets up appropriate handler address based on command type
+; Branches to specialized handlers for different operations
+
+; Command Parameter Processing ($FCC6-$FCCD)
+; Calculates buffer offsets for command parameters
+; Prepares jump to command-specific code
+; Sets up execution environment for command
+LFC94:  ldx     #$04
+        lda     ($19),y
+        sta     $14
+LFC9A:  cmp     $04AF,x
+        dex
+        bcs     LFC9A
+        lda     $0499,x
+        sta     $16
+        txa
+        asl     a
+        sta     $09
+        lda     $82
+        and     #$F8
+        ora     $09
+        ora     $13
+        sta     $82
+        ldx     $13
+        lda     $04,x
+        bmi     LFC7A
+        lda     $1F
+        cmp     #$40
+        beq     LFCD0
+        cmp     #$60
+        beq     LFCC6
+        jmp     LFE27
+
+; Direct Memory Access Setup ($FCC8-$FCFD)
+; Prepares memory addresses for data transfer
+; Initializes DMA control registers
+; Sets up command-specific parameters for transfer
+LFCC6:  lda     $20
+LFCC8:  clc
+        adc     #$05
+        sta     $18
+
+; Device Control Setup ($FCCD-$FCE6)
+; Initializes device control registers
+; Sets device-specific parameters for operation
+; Prepares status flags for command execution
+        jmp     (L0017)
+
+LFCD0:  sei
+        lda     #$40
+        sta     $04,x
+        lda     #$01
+        sta     $21,x
+        lda     LFFD7,x
+        ora     $40
+        sta     $40
+        lda     #$5A
+        sta     $06,x
+        jmp     LFE6C
+
+; Command Buffer Parsing ($FCE7-$FCFD)
+; Extracts command parameters from buffer
+; Processes command flags and options
+; Prepares data structures for command execution
+LFCE7:  ldy     $20
+LFCE9:  lda     $0403,y
+        pha
+        and     #$78
+        sta     $1F
+        tya
+        asl     a
+        asl     a
+        asl     a
+        adc     #$21
+        sta     $19
+        ldy     #$02
+        pla
+        rts
+
+; Command Execution Loop ($FCFD-$FD54)
+; Main loop for processing disk commands
+; Handles different command types and operations
+; Manages command sequencing and device state
+LFCFD:  ldy     #$03
+        lda     ($19),y
+        sta     $11
+LFD03:  lda     #$7F
+        sta     $0D
+        lda     $11
+        clc
+        adc     #$02
+        cmp     $16
+        bcc     LFD12
+        lda     #$00
+LFD12:  sta     $15
+        ldx     #$0E
+        stx     $20
+        ldx     #$FF
+LFD1A:  jsr     LFCE7
+        bpl     LFD4B
+        sta     $09
+        and     #$01
+        cmp     $13
+        bne     LFD4B
+        lda     ($19),y
+        cmp     $14
+        bne     LFD4B
+        lda     $1F
+        cmp     #$60
+        beq     LFD4B
+        iny
+        sec
+        lda     ($19),y
+        sbc     $15
+        bpl     LFD3E
+        clc
+        adc     $16
+LFD3E:  cmp     $0D
+        bcs     LFD4B
+        sta     $0D
+        lda     $20
+        tax
+        adc     #$05
+        sta     $18
+LFD4B:  dec     $20
+        bpl     LFD1A
+        txa
+        bpl     LFD55
+        jmp     LFC14
+
+; Implements low-level disk operations
+; Handles data transfer between memory and disk controller
+; Controls timing for disk operations
+; Manages error conditions during transfers
+
+; Job Queue Management ($FD55-$FD70)
+; Manages pending disk operations in queue
+; Selects next operation based on priority
+; Updates job status flags during processing
+LFD55:  stx     $04A0
+        stx     $20
+        jsr     LFCE7
+        lda     $1F
+        cmp     #$00
+        bne     LFD9A
+        jsr     LFD8B
+LFD66:  bvc     LFD66
+        clv
+        lda     $41
+        sta     (L0017),y
+        iny
+        bne     LFD66
+
+; Data Transfer Initialization ($FD70-$FD9A)
+; Prepares controller for data transfer
+; Handles synchronization with disk rotation
+; Sets up buffer addresses and transfer length
+LFD70:  bvc     LFD70
+        lda     $41
+        sta     $25
+        lda     #$10
+        bit     $4D
+        bne     LFD88
+        jsr     LFF06
+        cmp     $25
+        bne     LFD86
+        jmp     LFE6C
+
+LFD86:  lda     #$05
+LFD88:  jmp     LFEA1
+
+LFD8B:  jsr     LFE77
+        jsr     LFEC8
+        cmp     #$07
+        beq     LFD99
+        lda     #$04
+        bne     LFDA9
+LFD99:  rts
+
+LFD9A:  cmp     #$10
+        bne     LFE07
+        jsr     LFF06
+        sta     $25
+        lda     $82
+        and     #$08
+        beq     LFDAC
+LFDA9:  jmp     LFEA1
+
+; Disk Controller Programming ($FDAC-$FE06)
+; Programs disk controller registers for operation
+; Controls data flow between memory and controller
+; Manages timing for disk access operations
+LFDAC:  jsr     LFE77
+        ldx     $049D
+        dex
+LFDB3:  bvc     LFDB3
+        clv
+        dex
+        bne     LFDB3
+        lda     #$DE
+        sta     $4C
+        lda     #$DC
+        ldx     #$FF
+        jsr     LFEFD
+        jsr     LFEFD
+LFDC7:  bvc     LFDC7
+        clv
+        sta     $4C
+        lda     #$07
+        sta     $80
+        ldy     #$00
+LFDD2:  bvc     LFDD2
+        clv
+        lda     (L0017),y
+        sta     $80
+        iny
+        bne     LFDD2
+        ldx     $25
+LFDDE:  bvc     LFDDE
+        clv
+        stx     $80
+        jsr     LFF00
+        ldx     #$00
+        jsr     LFF00
+        lda     #$FC
+LFDED:  bvc     LFDED
+        clv
+        sta     $4C
+        ldx     #$28
+LFDF4:  jsr     LFEF7
+        dex
+        bne     LFDF4
+        ldy     $20
+        lda     $0403,y
+        eor     #$30
+        sta     $0403,y
+        jmp     LFCFD
+
+; Specialized routines for different command types:
+; - $00: Read operation
+; - $10: Write operation 
+; - $20: Verify operation
+; - $30/$40/$60: Control and status operations
+
+; Verify Operation ($FE07-$FE20)
+; Compares memory contents with disk data
+; Performs verification after write operations
+; Reports discrepancies via error handler
+LFE07:  cmp     #$20
+        bne     LFE21
+        jsr     LFD8B
+LFE0E:  bvc     LFE0E
+        clv
+        lda     $41
+        cmp     (L0017),y
+        bne     LFE1D
+        iny
+        bne     LFE0E
+        jmp     LFD70
+
+LFE1D:  lda     #$07
+        bne     LFE74
+
+; Status Command Handler ($FE21-$FE27)
+; Processes drive status request commands
+; Returns drive state and error conditions
+; Updates status buffer for primary processor
+LFE21:  jsr     LFE77
+        jmp     LFE6C
+
+; Track/Sector Command Handler ($FE27-$FE62)
+; Handles track and sector positioning commands
+; Validates sector parameters and updates position
+; Prepares drive for subsequent read/write operations
+LFE27:  ldx     #$B4
+        jsr     LFE9B
+        ldy     #$04
+LFE2E:  bvc     LFE2E
+        clv
+        lda     $41
+        sta     $0E,y
+        dey
+        bpl     LFE2E
+        ldy     #$04
+        lda     #$00
+LFE3D:  eor     $0E,y
+        dey
+        bpl     LFE3D
+        cmp     #$00
+        bne     LFE6F
+        ldx     $13
+        lda     $10
+        sta     $21,x
+        lda     $1F
+        cmp     #$30
+        beq     LFE62
+        ldy     #$01
+LFE55:  lda     ($19),y
+        cmp     $0E,y
+        bne     LFE72
+        dey
+        bpl     LFE55
+        jmp     LFD03
+
+; Error Response Handling ($FE62-$FE76)
+; Standardized error response generation
+; Sets error code and status flags
+; Prepares error information for primary processor
+LFE62:  ldy     #$04
+LFE64:  lda     $0E,y
+        sta     ($19),y
+        dey
+        bpl     LFE64
+LFE6C:  lda     #$01
+        .byte   $2C
+LFE6F:  lda     #$09
+        .byte   $2C
+LFE72:  lda     #$0B
+LFE74:  jmp     LFEA1
+
+; Support functions used by command handlers:
+; - Checksum calculation and verification
+; - Data transfer synchronization
+; - Error handling and reporting
+; - Timing and delay functions
+
+; Checksum Calculation ($FE77-$FE8C)
+; Calculates checksum for command buffer data
+; XORs bytes from command buffer for verification
+; Stores checksum in byte 4 of command buffer
+LFE77:  ldy     #$03
+        lda     #$00
+LFE7B:  eor     ($19),y
+        dey
+        bpl     LFE7B
+        ldy     #$04
+        sta     ($19),y
+        ldy     $20
+        ldx     #$B4
+LFE88:  jsr     LFE9B
+        ldy     #$04
+
+; Data Verification ($FE8D-$FE9A)
+; Verifies data integrity through checksums
+; Compares calculated and stored checksums
+; Returns status based on verification result
+LFE8D:  bvc     LFE8D
+        clv
+        lda     $41
+        cmp     ($19),y
+        bne     LFE88
+        dey
+        bpl     LFE8D
+        iny
+        rts
+
+; Timeout and Retry Handler ($FE9B-$FEC7)
+; Manages operation timeouts
+; Implements retry logic for failed operations
+; Escalates to error handler after retry exhaustion
+LFE9B:  cli
+        dex
+        bne     LFEC0
+        lda     #$02
+
+
+LFEA1:  ldy     $20
+        sta     $0403,y
+        pha
+        lda     $01
+        ldx     $13
+        adc     $0402
+        sta     $02,x
+        jsr     LFF0F
+        pla
+        lsr     a
+        bne     LFEBA
+        jmp     LFCFD
+
+LFEBA:  ldx     #$3F
+        txs
+        jmp     LFC14
+
+LFEC0:  jsr     LFEC8
+        cmp     #$08
+        bne     LFE9B
+        rts
+
+; Disk Controller Synchronization ($FEC8-$FEF6)
+; Synchronizes processor with disk controller timing
+; Waits for control signals from hardware
+; Manages handshaking with disk controller hardware
+LFEC8:  lda     #$1E
+        sta     $04EF
+LFECD:  jsr     LFF0F
+        sei
+        lda     #$D0
+        sta     $45
+        lda     #$03
+        dec     $04EF
+        bmi     LFEA1
+LFEDC:  bit     $45
+        bpl     LFEA1
+        bit     $40
+        bmi     LFEDC
+        ldy     $04A5
+
+; Utility Transfer Functions ($FEF7-$FF0F)
+; Short utility routines for data transfers
+; Handles byte-level operations with controller
+; Implements checksumming and verification helpers
+LFEE7:  bit     $40
+        bmi     LFECD
+        dey
+        bne     LFEE7
+        lda     $40
+        ora     #$40
+        sta     $40
+        bit     $41
+        clv
+LFEF7:  bvc     LFEF7
+        clv
+        lda     $41
+        rts
+
+LFEFD:  jsr     LFF00
+LFF00:  bvc     LFF00
+        clv
+        stx     $80
+        rts
+
+LFF06:  lda     #$00
+        tay
+LFF09:  eor     (L0017),y
+        iny
+        bne     LFF09
+        rts
+
+LFF0F:  lda     $40
+        and     #$BF
+        sta     $40
+        rts
+
+; Services hardware interrupts
+; Updates disk drive positioning (head movement)
+; Manages timing and motor control
+; Handles step pulses for head movement
+
+; Context Saving ($FF16-$FF2E)
+; Saves processor state at interrupt entry
+; Updates timing counters in $00 and $01
+; $01 appears to track current track position
+; Prepares for interrupt processing
+LFF16:
+        pha
+        txa
+        pha
+        lda     $0400
+        sta     $8F
+        inc     $00
+        lda     $00
+        and     #$0F
+        bne     LFF28
+        inc     $01
+LFF28:  ldx     #$01
+        lda     $82
+        pha
+        ora     #$01
+
+; Device Selection ($FF2F-$FF42)
+; Determines which drive needs servicing
+; Sets appropriate device flags
+; Updates device status information
+LFF2F:  sta     $82
+        lda     $82
+        and     #$08
+        cmp     $04A8,x
+        sta     $04A8,x
+        beq     LFF42
+        lda     #$01
+        sta     $04A6,x
+
+; Position Check ($FF42-$FF59)
+; Compares current position ($01) with target track ($02,x)
+; If positions match, updates status and stops stepping
+; If positions differ, continues with stepping operation
+; Executes head movement when required
+LFF42:  lda     $01
+        cmp     $02,x
+        bne     LFF59
+        asl     $04,x
+        bcs     LFF53
+        lda     LFFD5,x
+        ora     $40
+        sta     $40
+LFF53:  jsr     LFFCA
+        clc
+        ror     $04,x
+
+; Step Counter Management ($FF59-$FF7A)
+; Checks remaining steps in $06,x
+; If zero, no further stepping needed
+; Otherwise continues stepping process
+; Manages step counters and timing
+LFF59:  lda     $06,x
+        bne     LFF7A
+        lda     $04A1,x
+        beq     LFF71
+        sta     $06,x
+        pha
+        lda     #$01
+        sta     $23,x
+        lda     #$00
+        sta     $04A1,x
+        pla
+        bne     LFF7A
+LFF71:  lda     $04,x
+        and     #$BF
+        sta     $04,x
+        jmp     LFFBA
+
+; Head Positioning ($FF7A-$FFBA)
+; Controls stepper motor phase transitions via 6522 VIA at $40
+; Implements stepper motor control with 3 (8050) or 5 (8250) phases per track
+
+; Inward Movement (toward higher track numbers)
+LFF7A:  asl     a           ; Test direction bit from command
+        bcs     LFF94       ; Branch if moving outward (toward track 0)
+        dec     $23,x       ; Decrement step timing counter
+        bne     LFF88       ; If not zero yet, skip phase change
+        lda     $04A3       ; Load step rate timing value
+        sta     $23,x       ; Reset timing counter
+        dec     $06,x       ; Decrement track position counter
+LFF88:  lda     $40         ; Load current motor phase bits
+        and     LFFD7,x     ; Mask with phase pattern ($0C or $03)
+        sec                 ; Set carry for subtraction
+        sbc     LFFD3,x     ; Rotate phase pattern (subtract $04 or $01)
+        jmp     LFFA8       ; Jump to output routine
+
+; Outward Movement (toward track 0)
+LFF94:  dec     $23,x       ; Decrement step timing counter
+        bne     LFF9F       ; If not zero yet, skip phase change
+        lda     $04A3       ; Load step rate timing value
+        sta     $23,x       ; Reset timing counter
+        inc     $06,x       ; Increment track position counter
+LFF9F:  lda     $40         ; Load current motor phase bits
+        and     LFFD7,x     ; Mask with phase pattern ($0C or $03)
+        clc                 ; Clear carry for addition
+        adc     LFFD3,x     ; Rotate phase pattern (add $04 or $01)
+
+; Phase Pattern Output (common to both directions)
+LFFA8:  and     LFFD7,x     ; Ensure only motor phase bits are affected
+        sta     $08         ; Store new phase pattern temporarily
+        lda     $40         ; Reload full port value
+        and     LFFD1,x     ; Clear phase bits from current port value
+        ora     $08         ; Combine with new phase pattern
+        sta     $40         ; Update VIA output port with new phase pattern
+        lda     $82         ; Load record pointer
+        and     #$FE        ; Clear bit 0 (prepare for next operation)
+
+; Interrupt Cleanup ($FFBA-$FFC9)
+; Restores device state
+; Updates status flags
+; Restores processor context and returns
+LFFBA:  dex
+        bmi     LFFC0
+        jmp     LFF2F
+
+LFFC0:  lsr     $04AB
+        pla
+        sta     $82
+        pla
+        tax
+        pla
+        rti
+; End of interrupt handler
+
+; Helper functions for interrupt handler
+; Data tables for disk controller bit masks
+; Control constants for head positioning
+LFFCA:  lda     $01
+        sta     $02,x
+        dec     $02,x
+        rts
+
+LFFD1:  .byte   $F3
+        .byte   $FC
+LFFD3:  .byte   $04
+        .byte   $01
+LFFD5:  .byte   $20
+        .byte   $10
+LFFD7:  .byte   $0C
+        .byte   $03
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+
+; NMI vector - I think this points into "outer space" - i.e. is not served by
+; any RAM, ROM or other chip.  And that's OK, because ~NMI is permanently
+; pulled up.
+lFFFA:
+        .byte   $AA
+        .byte   $1F
+
+; reset vector - LFC04
+LFFFC:
+        .byte   $04
+        .byte   $FC
+
+; interrupt vector - LFF16
+LFFFE:
+        .byte 0x16
+        .byte 0xFF

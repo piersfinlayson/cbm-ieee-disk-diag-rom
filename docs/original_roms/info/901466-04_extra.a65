@@ -1,0 +1,32 @@
+; 901466-04 Commodore 4040 Disk Drive ROM
+;
+; The code is Copyright (c) Commodore Business Machines, Inc.
+;
+; Disassembly and comts are Copyright (c) 2025 Piers Finlayson.
+;
+; The ROM was sourced from:
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/4040/901466-04.bin
+;
+; 901466-04 is the 4040 disk drive mask programmed 6530 IC, supporting DOS 2.
+; The 6530 was mask programmed with the appropriate 1KB ROM image for the
+; 4040's secondary processor, the 6504 (a pin reduced 6502).
+;
+; 901466-01/02 are the 2040/3040 disk drive mask programmed 6530 ICs,
+; supporting DOS 1.
+;
+; As the 2040/3040/4040 are practically identical from a hardware perspective,
+; a 2040/3040 can be upgraded by installing the 901466-04 6530 IC and
+; replacing the primary processor's ROMs.  This was frequently done.
+;
+; There may be some very early 2040 units which are do have incompatibilities.
+; Raeto West in Programming the PET/CBM states: "Units vary in small details;
+; the 2040 board has different ROM slots and is not compatible with the 3040."
+; He also states later that "[it] is not particularly easy to upgrade, as its
+; internal main printed circuit board has to be changed".  This author (Piers)
+; has a 1979 2040, and a DOS 1 3040, and has successfully swapped the ROMs
+; between them, so it is unclear what West was referring to.
+;
+; The key difference between 901466-04 and earlier versions appears to be that
+; the job command codes are different.  The 901466-04 requires a job code of
+; $D0 to execute arbitrary code, whereas the earlier versions used $60 (ORed
+; with 0 or 1 for the drive ID).

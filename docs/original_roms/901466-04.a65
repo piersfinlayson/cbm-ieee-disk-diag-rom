@@ -1,0 +1,663 @@
+; 901466-04 Commodore 4040 Disk Drive ROM
+;
+; The code is Copyright (c) Commodore Business Machines, Inc.
+;
+; Disassembly and comts are Copyright (c) 2025 Piers Finlayson.
+;
+; The ROM was sourced from:
+; http://www.zimmers.net/anonftp/pub/cbm/firmware/drives/old/4040/901466-04.bin
+;
+; 901466-04 is the 4040 disk drive mask programmed 6530 IC, supporting DOS 2.
+; The 6530 was mask programmed with the appropriate 1KB ROM image for the
+; 4040's secondary processor, the 6504 (a pin reduced 6502).
+;
+; 901466-01/02 are the 2040/3040 disk drive mask programmed 6530 ICs,
+; supporting DOS 1.
+;
+; As the 2040/3040/4040 are practically identical from a hardware perspective,
+; a 2040/3040 can be upgraded by installing the 901466-04 6530 IC and
+; replacing the primary processor's ROMs.  This was frequently done.
+;
+; There may be some very early 2040 units which are do have incompatibilities.
+; Raeto West in Programming the PET/CBM states: "Units vary in small details;
+; the 2040 board has different ROM slots and is not compatible with the 3040."
+; He also states later that "[it] is not particularly easy to upgrade, as its
+; internal main printed circuit board has to be changed".  This author (Piers)
+; has a 1979 2040, and a DOS 1 3040, and has successfully swapped the ROMs
+; between them, so it is unclear what West was referring to.
+;
+; The key difference between 901466-04 and earlier versions appears to be that
+; the job command codes are different.  The 901466-04 requires a job code of
+; $D0 to execute arbitrary code, whereas the earlier versions used $60 (ORed
+; with 0 or 1 for the drive ID).
+
+; da65 V2.19 - Git 162bc6b30
+; Created:    2025-05-24 14:46:29
+; Input file: bin/901466-04.bin
+; Page:       1
+
+
+        .setcpu "6502"
+
+CLOCK           := $0000                        ; System clock/timer
+MTRTM           := $0001                        ; Motor timer
+DRVST           := $0003                        ; Drive status
+STEPS           := $0005                        ; Stepper motor steps
+COW             := $0007                        ; Copy on write flag
+WORK            := $0008                        ; Work area/scratch
+DTRCK           := $000A                        ; Destination track
+DSECT           := $000B                        ; Destination sector
+CSECT           := $000C                        ; Current sector
+STAB            := $000D                        ; Sector table
+DRIVE           := $0012                        ; Drive number
+TRACK           := $0013                        ; Current track
+NEXTS           := $0014                        ; Next sector
+SECTR           := $0015                        ; Sector number
+BUFPT           := $0016                        ; Buffer pointer
+BUFPT_HI        := $0017                        ; Buffer pointer - high byte
+HDRPNT          := $0018                        ; Header pointer
+FTNUM           := $001A                        ; File table number
+IP              := $001B                        ; Instruction pointer
+IOB             := $001E                        ; I/O block
+JOBNUM          := $001F                        ; Job number
+VIA_VB          := $0040                        ; VIA output register B
+VIA_DIN         := $0041                        ; VIA output register A
+VIA_VDDRB       := $0042                        ; VIA data direction register B
+VIA_T1LL        := $0044                        ; VIA Write Latch (+ read counter)
+VIA_TIMER       := $0045                        ; VIA timer
+VIA_ACR         := $004B                        ; VIA Auxiliary Control Register
+VIA_PCR         := $004C                        ; VIA Peripheral Control Register
+VIA_IFR         := $004D                        ; Interrupt Flag Register
+VIA_IER         := $004E                        ; Interrupt Enable Register
+RIOT_DOUT       := $0080                        ; 6530 RIOT output register
+RIOT_EOUT       := $0081                        ; 6530 RIOT output register
+RIOT_PB         := $0082                        ; RIOT port B
+RIOT_DDRB       := $0083                        ; RIOT data direction register B
+x8F             := $008F                        ; Unknown
+TICK            := $0400                        ; Tick counter
+DELAY           := $0401                        ; Delay timer
+CUTMT           := $0402                        ; Cut motor timer
+JOBS            := $0403                        ; Job queue/status
+x0412           := $0412                        ; Unknown variable
+L18AA           := $18AA
+
+.segment        "firmware": absolute
+
+        .byte   $54,$FC,$08,$FF
+LFC04:  lda     TICK
+        bne     LFC04
+; Reset vector points here
+start:  ldx     #$3F
+        txs
+        cld
+        stx     TICK
+        lda     #$00
+; The zero page test also initializes the JOBS array
+zp_test:sta     CLOCK,x
+        cmp     CLOCK,x
+; Loop forever if ZP error
+zp_byte_error:
+        bne     zp_byte_error
+init_job:
+        sta     JOBS,x
+        dex
+continue_zp_test:
+        bpl     zp_test
+; Init registers and shared RAM.
+; X is now $FF
+init_reg_ram:
+        stx     VIA_VB
+        stx     VIA_VDDRB
+        stx     CUTMT
+        stx     RIOT_EOUT
+        stx     FTNUM
+        lda     #$07
+        sta     RIOT_DDRB
+        lda     #$FC
+        sta     VIA_PCR
+        lda     #$92
+        sta     VIA_IER
+        lda     #$01
+        sta     VIA_ACR
+        lsr     a
+        sta     VIA_T1LL
+        sta     BUFPT
+        lda     #$0F
+        sta     TICK
+        sta     x8F
+        lda     #$80
+        sta     DRVST
+        sta     $04
+        lda     #$32
+        sta     DELAY
+        lda     #$04
+        sta     $19
+; Process jobs queue, starting at job 14 ($0E - highest priority)
+start_job_processing:
+        ldy     #$0E
+; Process a job
+job_processing:
+        cli
+        lda     JOBS,y
+        bpl     skip_to_next_job
+        cmp     #$D0
+        bne     non_execute_job
+        sty     JOBNUM
+        jmp     execute_ram_code
+
+; Job not requiring code execution from RAM
+non_execute_job:
+        and     #$01
+        tax
+        sta     DRIVE
+        sei
+        lda     VIA_VB
+        and     MOTOR_BITS,x
+        beq     LFC80
+        lda     VIA_VB
+        eor     MOTOR_BITS,x
+        sta     VIA_VB
+        lda     CLOCK
+        adc     DELAY
+        sta     MTRTM,x
+LFC80:  lda     DRVST,x
+        bmi     LFC8A
+        lda     CLOCK
+        sta     MTRTM,x
+        lda     DRVST,x
+LFC8A:  asl     a
+        bpl     LFC92
+skip_to_next_job:
+        dey
+        bpl     job_processing
+LFC90:  bne     start_job_processing
+LFC92:  cli
+        lda     #$40
+        sta     WORK
+        ldy     #$0E
+        sty     JOBNUM
+LFC9B:  jsr     LFDA5
+        bpl     LFCCF
+        and     #$01
+        cmp     DRIVE
+        bne     LFCCF
+        lda     IOB
+        cmp     #$40
+        bne     LFCAF
+        jmp     LFD2A
+
+LFCAF:  lda     DRVST,x
+        and     #$3F
+        sta     TRACK
+        beq     LFCF4
+        sec
+        sbc     (HDRPNT),y
+        beq     LFCF4
+        sta     DTRCK
+        bpl     LFCC5
+        clc
+        eor     #$FF
+        adc     #$01
+LFCC5:  cmp     WORK
+        bcs     LFCCF
+        sta     WORK
+        lda     DTRCK
+        sta     $09
+LFCCF:  dec     JOBNUM
+        bpl     LFC9B
+        lda     WORK
+        bit     $09
+        bmi     LFCDE
+        clc
+        eor     #$FF
+        adc     #$01
+LFCDE:  sta     WORK
+        asl     a
+        sei
+        sta     STEPS,x
+        lda     #$40
+        ora     DRVST,x
+        clc
+        adc     WORK
+        sta     DRVST,x
+LFCED:  bne     LFC90
+LFCEF:  .byte   $F3
+        .byte   $FC
+        .byte   $1F
+        .byte   $19
+        .byte   $12
+LFCF4:  lda     DRVST,x
+        bmi     LFCED
+        ldx     #$04
+        lda     (HDRPNT),y
+LFCFC:  cmp     LFCEF,x
+        dex
+        bcs     LFCFC
+        lda     $0499,x
+        sta     SECTR
+        txa
+        asl     a
+        sta     WORK
+        lda     RIOT_PB
+        and     #$F8
+        ora     WORK
+        ora     DRIVE
+        sta     RIOT_PB
+        ldx     DRIVE
+        lda     IOB
+        cmp     #$60
+        beq     execute_ram_code
+        jmp     LFE82
+
+; Executes code at address $X00 where X is job number + 5
+; So, for job 0, executes code at $0500
+execute_ram_code:
+        lda     JOBNUM
+        clc
+        adc     #$05
+        sta     BUFPT_HI
+        jmp     (BUFPT)
+
+LFD2A:  sei
+        lda     #$C1
+        sta     DRVST,x
+        lda     #$0F
+        and     PH_OUT,x
+        ora     VIA_VB
+        sta     VIA_VB
+        lda     #$8C
+        sta     STEPS,x
+        jmp     LFEC6
+
+LFD3F:  lda     #$7F
+        sta     CSECT
+        lda     $10
+        clc
+        adc     #$02
+        cmp     SECTR
+        bcc     LFD4E
+        lda     #$00
+LFD4E:  sta     NEXTS
+        ldx     #$0E
+        stx     JOBNUM
+        ldx     #$FF
+LFD56:  jsr     LFDA5
+        bpl     LFD8E
+        sta     WORK
+        lda     (HDRPNT),y
+        cmp     TRACK
+        bne     LFD8E
+        lda     WORK
+        and     #$01
+        cmp     DRIVE
+        bne     LFD8E
+        tya
+        cmp     #$60
+        beq     LFD8E
+        iny
+        sec
+        lda     (HDRPNT),y
+        sbc     NEXTS
+        bpl     LFD7B
+        clc
+        adc     SECTR
+LFD7B:  sta     DSECT
+        sec
+        sbc     CSECT
+        bpl     LFD8E
+        ldx     JOBNUM
+        lda     DSECT
+        sta     CSECT
+        txa
+        clc
+        adc     #$05
+        sta     BUFPT_HI
+LFD8E:  dec     JOBNUM
+        bpl     LFD56
+        txa
+        bpl     LFD98
+        jmp     start_job_processing
+
+LFD98:  stx     $04A0
+        stx     JOBNUM
+        jsr     LFDA5
+        lda     IOB
+        jmp     LFDC4
+
+LFDA5:  ldy     JOBNUM
+        lda     JOBS,y
+        pha
+        and     #$70
+        sta     IOB
+        tya
+        asl     a
+        asl     a
+        asl     a
+        adc     #$21
+        sta     HDRPNT
+        ldy     #$02
+        pla
+        rts
+
+LFDBB:  ldy     #$03
+        lda     (HDRPNT),y
+        sta     $10
+        jmp     LFD3F
+
+LFDC4:  cmp     #$00
+        bne     LFDF0
+        jsr     LFDDD
+LFDCB:  bit     VIA_IFR
+        bpl     LFDCB
+        lda     VIA_DIN
+        sta     (BUFPT),y
+        eor     WORK
+        sta     WORK
+        iny
+        bne     LFDCB
+        jmp     LFE6B
+
+LFDDD:  ldy     #$00
+        sty     WORK
+        jsr     LFED3
+        jsr     LFF3E
+        cmp     #$07
+        beq     LFDEF
+        lda     #$04
+        bne     LFDFA
+LFDEF:  rts
+
+LFDF0:  cmp     #$20
+        bpl     LFE57
+        lda     RIOT_PB
+        and     #$08
+        beq     LFDFD
+LFDFA:  jmp     LFF08
+
+LFDFD:  lda     #$10
+        sta     VIA_IER
+        jsr     LFED3
+        ldx     $049D
+        dex
+LFE08:  bit     VIA_IFR
+        bpl     LFE08
+        bit     VIA_DIN
+        dex
+        bne     LFE08
+        lda     #$DE
+        sta     VIA_PCR
+        lda     #$DC
+        ldx     #$FF
+        jsr     LFF79
+        jsr     LFF79
+        jsr     LFF79
+LFE22:  bit     VIA_IFR
+        bpl     LFE22
+        bit     VIA_DIN
+        sta     VIA_PCR
+        lda     #$07
+        sta     RIOT_DOUT
+        ldy     #$00
+        sty     WORK
+LFE32:  bit     VIA_IFR
+        bpl     LFE32
+        bit     VIA_DIN
+        lda     (BUFPT),y
+        sta     RIOT_DOUT
+        eor     WORK
+        sta     WORK
+        iny
+        bne     LFE32
+        tax
+        jsr     LFF79
+        jsr     LFF58
+        ldy     JOBNUM
+        lda     JOBS,y
+        eor     #$30
+        sta     JOBS,y
+        jmp     LFDBB
+
+LFE57:  jsr     LFDDD
+LFE5A:  bit     VIA_IFR
+        bpl     LFE5A
+        lda     VIA_DIN
+        cmp     (BUFPT),y
+        bne     LFE7E
+        eor     WORK
+        sta     WORK
+        iny
+        bne     LFE5A
+LFE6B:  jsr     LFF51
+        cmp     WORK
+        beq     LFE76
+        lda     #$05
+        bne     LFE80
+LFE76:  lda     #$10
+        bit     VIA_IFR
+        beq     LFEC6
+        bne     LFE80
+LFE7E:  lda     #$07
+LFE80:  bne     LFEC8
+LFE82:  lda     #$00
+        sta     WORK
+        ldx     #$06
+        jsr     LFF02
+        ldy     #$04
+LFE8D:  bit     VIA_IFR
+        bpl     LFE8D
+        lda     VIA_DIN
+        sta     STAB,y
+        eor     WORK
+        sta     WORK
+        dey
+        bpl     LFE8D
+        cmp     #$00
+        bne     LFECB
+        lda     $0F
+        ldx     DRIVE
+        sta     DRVST,x
+        lda     IOB
+        cmp     #$30
+        beq     LFEBC
+        ldy     #$01
+LFEAF:  lda     (HDRPNT),y
+        cmp     STAB,y
+        bne     LFECF
+        dey
+        bpl     LFEAF
+        jmp     LFD3F
+
+LFEBC:  ldy     #$04
+LFEBE:  lda     STAB,y
+        sta     (HDRPNT),y
+        dey
+        bpl     LFEBE
+LFEC6:  lda     #$01
+LFEC8:  jmp     LFF08
+
+LFECB:  lda     #$09
+        bne     LFEC8
+LFECF:  lda     #$0B
+        bne     LFEC8
+LFED3:  ldy     #$03
+        lda     #$00
+LFED7:  eor     (HDRPNT),y
+        dey
+        bpl     LFED7
+        ldy     #$04
+        sta     (HDRPNT),y
+        ldy     JOBNUM
+        ldx     #$5A
+LFEE4:  jsr     LFF02
+        ldy     #$04
+LFEE9:  bit     VIA_IFR
+        bpl     LFEE9
+        lda     VIA_DIN
+        cmp     (HDRPNT),y
+        bne     LFEE4
+        dey
+        bpl     LFEE9
+        iny
+        lda     VIA_VB
+        ora     #$80
+        sta     VIA_VB
+        and     #$7F
+        sta     VIA_VB
+        rts
+
+LFF02:  cli
+        dex
+        bpl     LFF24
+        lda     #$02
+LFF08:  ldy     JOBNUM
+        sta     JOBS,y
+        pha
+        ldx     DRIVE
+        lda     CLOCK
+        adc     CUTMT
+        sta     MTRTM,x
+        pla
+        lsr     a
+        bne     LFF1E
+        jmp     LFDBB
+
+LFF1E:  ldx     #$3F
+        txs
+        jmp     start_job_processing
+
+LFF24:  jsr     LFF3E
+        cmp     #$08
+        bne     LFF02
+        rts
+
+LFF2C:  bit     RIOT_PB
+        bvc     LFF3D
+        bit     VIA_IFR
+        bpl     LFF2C
+        bit     VIA_DIN
+        bit     VIA_VB
+        dex
+        bne     LFF2C
+        bit     RIOT_PB
+LFF3D:  rts
+
+LFF3E:  sei
+        lda     #$D0
+        sta     VIA_TIMER
+        lda     #$03
+LFF45:  bit     VIA_TIMER
+        bpl     LFF08
+        bit     RIOT_PB
+        bvs     LFF45
+        bit     VIA_VB
+        bit     VIA_DIN
+LFF51:  bit     VIA_IFR
+        bpl     LFF51
+        lda     VIA_DIN
+        rts
+
+LFF58:  jsr     LFF79
+        ldx     #$00
+        jsr     LFF79
+        lda     #$FC
+LFF62:  bit     VIA_IFR
+        bpl     LFF62
+        sta     VIA_PCR
+        lda     #$92
+        sta     VIA_IER
+        jsr     LFF51
+        bit     VIA_VB
+        jsr     LFF51
+        bit     VIA_VB
+        jmp     LFF51
+
+LFF79:  bit     VIA_IFR
+        bpl     LFF79
+        stx     RIOT_DOUT
+        bit     VIA_DIN
+        rts
+
+irq_handler:
+        pha
+        txa
+        pha
+        lda     TICK
+        sta     x8F
+        inc     CLOCK
+        ldx     #$01
+LFF8E:  lda     CLOCK
+        cmp     MTRTM,x
+        bne     LFFAA
+        lda     MOTOR_BITS,x
+        asl     DRVST,x
+        bit     VIA_VB
+        bcs     LFFA5
+        sec
+        lda     MOTOR_BITS,x
+        eor     VIA_VB
+        sta     VIA_VB
+LFFA5:  bne     LFFA8
+        clc
+LFFA8:  ror     DRVST,x
+LFFAA:  lda     STEPS,x
+        bne     LFFB7
+        lda     DRVST,x
+        and     #$BF
+        sta     DRVST,x
+        jmp     LFFE1
+
+LFFB7:  asl     a
+        lda     VIA_VB
+        and     LFCEF,x
+        sta     COW
+        lda     VIA_VB
+        and     PH_OUT,x
+        bcs     LFFCD
+        dec     STEPS,x
+        adc     PH_IN,x
+        bne     LFFD2
+LFFCD:  inc     STEPS,x
+        sbc     PH_IN,x
+LFFD2:  and     PH_OUT,x
+        ora     COW
+        sta     VIA_VB
+        lda     DRVST,x
+        bmi     LFFE1
+        lda     CLOCK
+        sta     MTRTM,x
+LFFE1:  dex
+        bpl     LFF8E
+        pla
+        tax
+        pla
+        rti
+
+; Phase shift inward
+PH_IN:  .byte   $04,$01
+; Motor on bits
+MOTOR_BITS:
+        .byte   $20,$10
+; Phase shift outward
+PH_OUT: .byte   $0C,$03
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+        tax
+nmi_vector:
+        .addr   L18AA
+reset_vector:
+        .addr   start
+irq_vector:
+        .addr   irq_handler
+
+; End of "firmware" segment
+.code
+

@@ -330,6 +330,11 @@ L78A9 = $78A9
 L90A5 = $90A5
 L90A9 = $90A9
 .ORG $C000
+
+; This is the start of the code which is copied to the secondary CPU via
+; shared RAM.  formatcode is a misnomer - while it does include formatting
+; code, it also contains other code used by the secondary, such as the
+; routine for stepping the head motor.
 C000          formatcode_0500:
 C000 A9 00      LDA #$0
 C002 8D 77 08   STA L877
@@ -735,6 +740,11 @@ C26C AD 7B 08   LDA L87B
 C26F 95 21      STA result+3,X
 C271 A9 01      LDA #$1
 C273 6C 02 FC   JMP (ierrr_fdc)
+
+; Bump Head Implementation ($C276-$C2A3)
+; When called with Y=$5C (92 decimal), this routine serves as the bump
+; 92 steps is intentionally excessive - guaranteed to hit physical stop
+; Phase counter in accum+1,X ensures complete track transitions
 C276          formatcode_0776_fdc:
 C276 78         SEI
 C277 A6 13      LDX track
@@ -749,6 +759,14 @@ C288 98         TYA
 C289 9D EB 04   STA steps?_fdc,X
 C28C AD EE 04   LDA phases_per_track?
 C28F 95 23      STA accum+1,X
+
+; Step Execution Loop ($C291-$C2A3)
+; Controls stepping sequence for head movement
+; Updates current position in usrjmp+1
+; Sets target position in bmpnt,X
+; Decrements step counter until steps complete
+; Monitors phase counter for full track transitions
+; Returns when movement complete
 C291          LC291:
 C291 78         SEI
 C292 A5 01      LDA usrjmp+1
@@ -763,7 +781,17 @@ C2A0 D0 EF      BNE LC291
 C2A2          LC2A2:
 C2A2 78         SEI
 C2A3 60         RTS
+
+; Motor Phase Patterns ($C2A4-$C2A5)
+; Contains phase bit patterns for each drive
+; $0C for first drive, $03 for second drive
+; Used to mask and control motor phase outputs
 C2A4 0C 03      .BYTE $C,$3
+
+; Formatting functions ($C2A6-$C327)
+; Support routines for disk operations
+; Includes timing loops and data transfer code
+; Handles synchronization with disk controller
 C2A6          formatcode_07a6_fdc:
 C2A6 A2 00      LDX #$0
 C2A8 A0 00      LDY #$0
@@ -846,6 +874,11 @@ C31E 8E 23 04   STX header_track_fdc
 C321 8C 24 04   STY header_sector_fdc
 C324          LC324:
 C324 6C 02 FC   JMP (ierrr_fdc)
+
+; Disk Read/Write Synchronization ($C327-$C363)
+; Synchronizes with disk rotation
+; Detects sync marks on media
+; Critical for proper sector alignment
 C327          formatcode_0827_fdc:
 C327 A5 40      LDA io_via40_pb_fdc
 C329 29 BF      AND #$BF
@@ -902,6 +935,22 @@ C36C AA         TAX
 C36D AA         TAX
 C36E AA         TAX
 C36F AA         TAX
+
+; The following code is the code the secondary CPU runs on initialization.
+; For this purpose the page (256 bytes) from $C370 is copies to $1100/$0500
+; even though the code beyond aroud $C412 is not the secondary CPU's code - 
+; it is the primary's code.
+;
+; When later copying the format routine, the primary copies from $C000-$C3FF
+; so includes this code, but modifies it after copying, to ensure that, if
+; the secondary CPU resets during the format, it won't re-execute the full
+; re-init seequence. 
+
+; CPU Initialization and Memory Test ($C370-$C3B6)
+; Sets up stack pointer, clears decimal mode
+; Tests zero page memory by incrementing 256 times and checking
+; Performs memory access pattern tests
+; On failure branches to reset handler at $FC06
 C370          formatcode_2070:
 C370 A2 3F      LDX #$3F
 C372 9A         TXS
@@ -959,6 +1008,11 @@ C3B2          LC3B2:
 C3B2 A0 FF 4C   .BYTE $A0,$FF,$4C
 C3B5          LC3B5:
 C3B5 06 FC      ASL LFC
+
+; Hardware Initialization ($C3B7-$C3E6)
+; Sets up 6522 VIA registers
+; Initializes I/O direction, control registers
+; Prepares shared memory communication area
 C3B7          LC3B7:
 C3B7 86 83      STX ssnum
 C3B9 CA         DEX
@@ -985,6 +1039,12 @@ C3E0 CA         DEX
 C3E1          LC3E1:
 C3E1 8E AC 04   STX nsides?_fdc
 C3E4 A2 01      LDX #$1
+
+; Drive Type Detection ($C3E6-$C3F7)
+; Reads jumper E3 via PB4 (recptr bit 4)
+; 8050=open=low, 8250=closed=high
+; Sets drive_type_fdc accordingly
+; Selects appropriate parameters based on drive type
 C3E6 A5 82      LDA recptr
 C3E8 29 10      AND #$10
 C3EA D0 01      BNE LC3ED
@@ -999,6 +1059,17 @@ C3F5          LC3F5 = * + 1
               ; Instruction parameter jumped to.
 C3F4 2C A2 17   BIT L17A2
 C3F7 86 83      STX ssnum
+
+; Stepper Parameters Setup ($C3F9-$C3FE)
+; Sets phases_per_track value
+; Uses 3 phases per track for 8050
+; Uses 5 phases per track for 8250
+; Crucial for proper track positioning
+;
+; Note these are stored in the RAM, but then copied to the zero page when
+; actually performing head movement, so the interrupt routine (in the 
+; secondary ROM) can move the right amount - and do so more quickly than
+; accessing non zero page.
 C3F9 A2 03      LDX #$3
 C3FB 8E EE 04   STX phases_per_track?
 C3FE A2 05      LDX #$5
@@ -1013,9 +1084,13 @@ C40A 8E 00 04   STX fdc_resetphase_fdc
 C40D 86 8F      STX io_riot80_t8_fdc
 C40F 6C 00 FC   JMP (itop_fdc)
 C412          LC412:
-C413          LC413 = * + 1
-              ; Instruction parameter jumped to.
-C412 2C A2 FF   BIT LFFA2
+    .byte 2C
+
+; Main entry point after reset and power on self-tests
+; Sets up stack pointer and initializes I/O control registers
+; Configures IEEE interface addresses for talking and listening
+LC413:
+C413 A2 FF      LDX #$FF
 C415 9A         TXS
 C416 AD 82 02   LDA io_dskcnt
 C419 29 C7      AND #$C7
@@ -1026,6 +1101,10 @@ C423 09 48      ORA #$48
 C425 85 0D      STA tlkadr
 C427 49 60      EOR #$60
 C429 85 0C      STA lsnadr
+
+; Buffer table initialization
+; Sets up buffer pointers and indexes
+; Maps logical buffers to physical memory locations
 C42B A2 00      LDX #$0
 C42D A0 00      LDY #$0
 C42F          LC42F:
@@ -1038,6 +1117,10 @@ C439 E8         INX
 C43A C8         INY
 C43B C0 0E      CPY #$E
 C43D D0 F0      BNE LC42F
+
+; Command channel setup
+; Initializes command channel in buffer table
+; Sets up command processor addresses
 C43F          LC43F:
 C43F A9 00      LDA #$0
 C441 95 29      STA buftab_0,X
@@ -1050,6 +1133,10 @@ C44B 95 29      STA buftab_0,X
 C44D E8         INX
 C44E A9 43      LDA #$43
 C450 95 29      STA buftab_0,X
+
+; Channel and buffer initialization
+; Marks linear tables and buffer status areas with $FF
+; Prepares all buffers for initial use
 C452 A9 FF      LDA #$FF
 C454 A2 12      LDX #$12
 C456          LC456:
@@ -1064,6 +1151,10 @@ C45F 95 51      STA buf1,X
 C461 95 79      STA ss,X
 C463 CA         DEX
 C464 10 F7      BPL LC45D
+
+; System variables initialization
+; Sets up various control parameters
+; Initializes usage flags and system state variables
 C466          LC466:
 C466 A9 0E      LDA #$E
 C468 85 4F      STA L4F
@@ -1084,6 +1175,11 @@ C485 8D 40 43   STA bufuse
 C488 A9 F0      LDA #$F0
 C48A 8D 41 43   STA bufuse+1
 C48D 20 78 D3   JSR LD378
+
+; Interrupt vector setup and drive parameters
+; Configures NMI handler vector
+; Sets up sector increment and revolution count
+; Loads hardware-dependent parameters from ROM
 C490 A9 A3      LDA #$A3
 C492 8D F0 10   STA i2nmi
 C495 A9 F3      LDA #$F3
@@ -1101,6 +1197,10 @@ C4B3 BD 54 FF   LDA rom_hwdep_10cd,X
 C4B6 8D CD 10   STA hwdep_10cd_bamlowtrkoff
 C4B9 BD 56 FF   LDA rom_positionofdiskname,X
 C4BC 8D CE 10   STA positionofdiskname
+
+; DOS version and disk format configuration
+; Determines which DOS version to use based on drive type
+; Sets up track, sector and directory parameters
 C4BF AD EA 10   LDA drive_type
 C4C2 F0 70      BEQ setver_dos2a
 C4C4          setver_dos2c:
@@ -1112,10 +1212,14 @@ C4CE A2 04      LDX #$4
 C4D0 AD AC 10   LDA nsides?
 C4D3 4A         LSR A
 C4D4 D0 04      BNE setver_dos2c_154
+
+; Single-sided drive configuration path
 C4D6          LC4D6:
 C4D6 CA         DEX
 C4D7 CA         DEX
 C4D8 D0 1F      BNE setver_dos2c_77
+
+; Double-sided 154 track configuration
 C4DA          setver_dos2c_154:
 C4DA BD C0 FF   LDA rom_154_bamdirtracks?,X
 C4DD 9D C0 10   STA bamtrack?,X
@@ -1131,6 +1235,8 @@ C4EF 8D E9 10   STA maxtrk
 C4F2 A9 4D      LDA #$4D
 C4F4 8D ED 10   STA mintrk_side2?
 C4F7 D0 1C      BNE LC515
+
+; Single-sided 77 track configuration
 C4F9          setver_dos2c_77:
 C4F9 BD BA FF   LDA rom_77_bamdirtracks?,X
 C4FC 9D C0 10   STA bamtrack?,X
@@ -1144,6 +1250,10 @@ C50B A9 4E      LDA #$4E
 C50D 8D E9 10   STA maxtrk
 C510 A2 00      LDX #$0
 C512 8E ED 10   STX mintrk_side2?
+
+; Final drive parameters setup
+; Configures sector-per-zone parameters
+; Sets format-specific parameters from ROM tables
 C515          LC515:
 C515 A2 06      LDX #$6
 C517 BD B3 FF   LDA rom_2c_maxsecperzone,X
@@ -1154,6 +1264,10 @@ C51E BD B3 FF   LDA rom_2c_maxsecperzone,X
 C521 9D 99 10   STA hwdep_1099_maxsecperzone,X
 C524 CA         DEX
 C525 10 F7      BPL LC51E
+
+; Final disk format configuration
+; Loads track parameters for side 0
+; Completes drive-specific configuration
 C527          LC527:
 C527 A2 07      LDX #$7
 C529          LC529:
@@ -1163,6 +1277,10 @@ C52F CA         DEX
 C530 10 F7      BPL LC529
 C532          LC532:
 C532 30 3C      BMI LC570
+
+; DOS 2.0 (earlier version) setup path
+; Configures parameters for original disk format
+; Sets up different track/sector organization
 C534          setver_dos2a:
 C534 A9 01      LDA #$1
 C536 8D AC 10   STA nsides?
@@ -1192,6 +1310,10 @@ C567 BD A0 FF   LDA LFFA0,X
 C56A 9D B0 10   STA trknum_side0?,X
 C56D CA         DEX
 C56E 10 F7      BPL LC567
+
+; Zone configuration for all drive types
+; Sets up zone parameters from ROM tables
+; Completes drive parameter initialization
 C570          LC570:
 C570 A2 07      LDX #$7
 C572          LC572:
@@ -1199,6 +1321,10 @@ C572 BD CA FF   LDA LFFCA,X
 C575 9D A4 10   STA nzones,X
 C578 CA         DEX
 C579 10 F7      BPL LC572
+
+; Final initialization and boot
+; Sets up idle handler vector
+; Initializes error status and jumps to boot routine
 C57B          LC57B:
 C57B A9 90      LDA #$90
 C57D 8D F6 10   STA iidle
@@ -1208,6 +1334,10 @@ C585 A9 73      LDA #$73
 C587 20 4A F1   JSR errts0
 C58A 8D 87 02   STA io_ifr?
 C58D 4C A3 F1   JMP boot
+
+; MAIN OPERATING SYSTEM LOOP BEGINS HERE
+; Processes pending commands and manages active channels
+; This is the main idle loop that runs continuously
 C590          idle_j:
 C590 AD 4A 43   LDA cmdwat
 C593 F0 0C      BEQ idl01
@@ -1217,6 +1347,10 @@ C596 A9 00      LDA #$0
 C598 8D 4A 43   STA cmdwat
 C59B 8D F2 10   STA nmiflag
 C59E 20 B9 C7   JSR parsxq
+
+; Channel scanning part of main loop
+; Enables interrupts and scans active channels
+; Checks each logical channel for pending activity
 C5A1          idl01:
 C5A1 58         CLI
 C5A2 A9 0E      LDA #$E
@@ -1241,6 +1375,10 @@ C5C2 F6 04      INC t0_temp,X
 C5C4          idl3:
 C5C4 C6 07      DEC t3
 C5C6 10 E4      BPL idl02
+
+; Job queue processing
+; Checks for pending jobs in the job queue
+; Marks active drives based on pending jobs
 C5C8          LC5C8:
 C5C8 A0 0B      LDY #$B
 C5CA          LC5CA:
@@ -1253,6 +1391,10 @@ C5D2 F6 04      INC t0_temp,X
 C5D4          idl5:
 C5D4 88         DEY
 C5D5 10 F3      BPL LC5CA
+
+; Drive operation management
+; Handles drive operations based on active flags
+; Manages disk controller hardware based on activity
 C5D7          LC5D7:
 C5D7 78         SEI
 C5D8 A5 12      LDA drvnum
@@ -1292,6 +1434,8 @@ C608 8D 82 02   STA io_dskcnt
 C60B 68         PLA
 C60C 85 12      STA drvnum
 C60E 4C A1 C5   JMP idl01
+; End of main processing loop
+
 C611          sysirq:
 C611 A2 FF      LDX #$FF
 C613 8E 3B 43   STX cmdnum
@@ -2767,6 +2911,11 @@ CFE6          LCFE6:
 CFE6 60         RTS
 CFE7          format:
 CFE7 A0 00      LDY #$0
+
+; Copy 4 pages (1KB) of formatcode_0500 to the shared RAM.  Although the
+; destination is apparently $1D00-$20FF, I think this is actually $1100-$13FF
+; and $2000-$20FF from the primary processor's perspective.  This is $0500-
+; $08FF from the secondary processor's perspective.
 CFE9          LCFE9:
 CFE9 B9 00 C0   LDA formatcode_0500,Y
 CFEC 99 00 1D   STA buff0_shadow,Y
@@ -2778,17 +2927,31 @@ CFFB B9 00 C3   LDA formatcode_0500+$0300,Y
 CFFE 99 00 20   STA buff3,Y
 D001 C8         INY
 D002 D0 E5      BNE LCFE9
+
+; I think this code prevents the special secondary CPU initialization code
+; which lives at the formatcode_207x locations from executing after the
+; secondary CPU has been initialized.
 D004          LD004:
 D004 8C 73 20   STY formatcode_2073
 D007 C8         INY
 D008 8C 70 20   STY formatcode_2070
 D00B AC AD 10   LDY hwdep_10ad_fmt_trk_??
 D00E 8C 75 20   STY formatcode_2075
+
+; Job initiation
+; - Sets header address to 0 via sethdra
+; - Gets drive number, OR's with $E0 (setting high bits)
+; - Stores to "jobs" at $1003 - this is the command trigger
 D011 A9 00      LDA #$0
 D013 20 1B FF   JSR sethdra
 D016 A5 12      LDA drvnum
 D018 09 E0      ORA #$E0
 D01A 8D 03 10   STA jobs
+
+; D01D-D02B: Synchronization
+; - Busy-wait loop checking "jobs" location 
+; - Waits for high bit to clear (secondary CPU acknowledgment)
+; - Success if final value equals 1, otherwise jumps to error
 D01D          LD01D:
 D01D AD 03 10   LDA jobs
 D020 30 FB      BMI LD01D
@@ -7975,9 +8138,10 @@ F28A 85 1A      STA r1
 F28C 60         RTS
 F28D          LF28D:
 F28D A2 00      LDX #$0
-F290          LF290 = * + 1
-              ; Instruction parameter jumped to.
-F28F 2C A6 04   BIT wpsw_fdc
+F28F
+    .byte $2C
+LF290:
+F290 A6 04      LDX $04
 F292 9A         TXS
 F293          LF293:
 F293 BA         TSX
@@ -8013,6 +8177,11 @@ F2B1 E0 FC      CPX #$FC
 F2B3 D0 F0      BNE LF2A5
 F2B5          LF2B5:
 F2B5 F0 DC      BEQ LF293
+
+; Reset handler entry point
+; Disables interrupts, clears decimal mode, and initializes I/O ports
+; Sets up IEEE interface and disk controller registers with appropriate data 
+; directions
 F2B7          dskint:
 F2B7 78         SEI
 F2B8 D8         CLD
@@ -8030,11 +8199,20 @@ F2D1 8D 83 02   STA io_dskcnt_ddr
 F2D4 8D 83 02   STA io_dskcnt_ddr
 F2D7 A0 00      LDY #$0
 F2D9 A2 00      LDX #$0
+
+; Ram test phase 1: sequential write
+; Initializes RAM by writing the value of X to each memory location
+; Sequential writes across the zero page memory area
 F2DB          LF2DB:
 F2DB 8A         TXA
 F2DC 95 00      STA usrjmp,X
 F2DE E8         INX
 F2DF D0 FA      BNE LF2DB
+
+; Ram test phase 2: verification and incrementing
+; Verifies each memory location contains expected value
+; Increments and re-verifies memory locations
+; Performs basic integrity check of RAM
 F2E1          LF2E1:
 F2E1 8A         TXA
 F2E2 D5 00      CMP usrjmp,X
@@ -8060,6 +8238,10 @@ F2FE D0 8D      BNE LF28D
 F300          LF300:
 F300 E8         INX
 F301 D0 DE      BNE LF2E1
+
+; Initialization of system vectors
+; Sets up critical jump vectors and system parameters
+; Initializes buffers and job control area
 F303          LF303:
 F303 A9 78      LDA #$78
 F305 8D 00 11   STA buff0
@@ -8071,6 +8253,11 @@ F312 A9 FF      LDA #$FF
 F314 8D 03 11   STA L1103
 F317 A9 D0      LDA #$D0
 F319 8D 03 10   STA jobs
+
+; Memory checksum calculation
+; Calculates a running checksum of memory pages
+; Uses indirect addressing to read through memory blocks
+; Validates system memory integrity
 F31C          LF31C:
 F31C E6 04      INC t0_temp
 F31E 86 0B      STX ip+1
@@ -8096,6 +8283,11 @@ F337 D0 67      BNE LF3A0
 F339          LF339:
 F339 E0 C0      CPX #$C0
 F33B D0 DF      BNE LF31C
+
+; Memory pattern test: write phase
+; Writes test patterns to memory blocks
+; Uses a calculated value based on Y-register and memory page
+; Tests multiple consecutive pages
 F33D          LF33D:
 F33D A9 10      LDA #$10
 F33F          LF33F:
@@ -8113,6 +8305,11 @@ F34E          LF34E:
 F34E E6 0B      INC ip+1
 F350 CA         DEX
 F351 D0 F2      BNE LF345
+
+; Memory pattern test: verification and complement phase
+; Verifies memory contents match expected pattern
+; Complements (inverts) memory contents and verifies again
+; Thorough RAM test to detect stuck bits and addressing problems
 F353          LF353:
 F353 A2 04      LDX #$4
 F355          LF355:
@@ -8142,12 +8339,23 @@ F372 18         CLC
 F373 69 10      ADC #$10
 F375 C9 50      CMP #$50
 F377 D0 C6      BNE LF33F
+
+; Final system check
+; Sets startup value and checks secondary processor (FDC) status
+; Verifies FDC is in reset phase before proceeding
+; Branches to error handler if FDC is not properly initialized
 F379          LF379:
 F379 A9 04      LDA #$4
 F37B 85 04      STA t0_temp
 F37D A9 01      LDA #$1
 F37F CD 00 10   CMP fdc_resetphase
 F382 D0 1C      BNE LF3A0
+
+; Secondary CPU initialization
+; Copies bootstrap code from formatcode_2070 to shared RAM at $1100/$0500
+; Secondary CPU will use this code to initialize itself
+; Sets fdc_resetphase to 0 to signal the secondary should start execution
+; Waits for secondary CPU to respond before continuing
 F384          LF384:
 F384 A0 00      LDY #$0
 F386          LF386:
@@ -8165,10 +8373,20 @@ F39A F0 FB      BEQ LF397
 F39C          LF39C:
 F39C C9 FD      CMP #$FD
 F39E 90 03      BCC nmi
+
+; Error and interrupt handlers
+; Jump to error handler at $F290 if secondary CPU init fails
+; NMI handler jumps to routine at $C413 - this is the drive's main startup
+; now that initialization is complete
 F3A0          LF3A0:
 F3A0 4C 90 F2   JMP LF290
 F3A3          nmi:
 F3A3 4C 13 C4   JMP LC413
+
+; Command initialization routine
+; Sets up device number and channel parameters
+; Prepares command sequence for disk operation
+; Initializes status registers and buffers
 F3A6          LF3A6:
 F3A6 A9 00      LDA #$0
 F3A8 85 16      STA sa
@@ -8183,6 +8401,11 @@ F3BA 20 BB E8   JSR getact
 F3BD AA         TAX
 F3BE A5 12      LDA drvnum
 F3C0 9D 50 43   STA lstjob,X
+
+; Command packet construction
+; Builds a command packet with operation parameters
+; Sets command type, count, and status flags
+; Sends initial command bytes to the buffer
 F3C3 A9 01      LDA #$1
 F3C5 20 4A D7   JSR putbyt
 F3C8 A9 04      LDA #$4
@@ -8195,6 +8418,11 @@ F3D8 20 4A D7   JSR putbyt
 F3DB A9 00      LDA #$0
 F3DD 20 4A D7   JSR putbyt
 F3E0 20 5E F4   JSR LF45E
+
+; Buffer table adjustment
+; Updates buffer pointers and status
+; Prepares for data transfer operation
+; Sets flags for command completion
 F3E3 20 BB E8   JSR getact
 F3E6 0A         ASL A
 F3E7 AA         TAX
@@ -8206,6 +8434,11 @@ F3F1          LF3F1:
 F3F1 A9 01      LDA #$1
 F3F3 20 4A D7   JSR putbyt
 F3F6 20 4A D7   JSR putbyt
+
+; Filename processing
+; Gets filename from buffer and processes it
+; Branches based on success/failure of name retrieval
+; Handles record information for disk operations
 F3F9 20 34 CD   JSR getnam
 F3FC 90 2C      BCC LF42A
 F3FE          LF3FE:
@@ -8217,6 +8450,11 @@ F40A 20 5E F4   JSR LF45E
 F40D A9 00      LDA #$0
 F40F 20 4A D7   JSR putbyt
 F412 D0 DD      BNE LF3F1
+
+; Command completion
+; Finalizes the command operation
+; Sets channel status and buffer flags
+; Returns operation result in accumulator
 F414          LF414:
 F414 20 BB E8   JSR getact
 F417 0A         ASL A
@@ -8229,6 +8467,11 @@ F421 8D 49 43   STA L4349
 F424 99 A2 00   STA chnrdy,Y
 F427 A5 18      LDA data
 F429 60         RTS
+
+; Alternate filename handling
+; Processes filename when getnam returns carry clear
+; Writes additional command parameters
+; Updates buffer pointers for operation
 F42A          LF42A:
 F42A AD 74 43   LDA nbtmp
 F42D 20 4A D7   JSR putbyt
@@ -8252,6 +8495,11 @@ F455 A6 15      LDX lindx
 F457 95 C7      STA lstchr,X
 F459 D6 C7      DEC lstchr,X
 F45B 4C 14 F4   JMP LF414
+
+; Name buffer transfer subroutine
+; Copies contents of name buffer to command buffer
+; Transfers a fixed 27-byte block for filename and parameters
+; Used by both filename handling paths
 F45E          LF45E:
 F45E A0 00      LDY #$0
 F460          LF460:
@@ -8262,6 +8510,11 @@ F467 C0 1B      CPY #$1B
 F469 D0 F5      BNE LF460
 F46B          LF46B:
 F46B 60         RTS
+
+; Data byte receive handler
+; Gets a byte from the device
+; Returns immediately if byte is non-zero
+; Otherwise processes the byte through the command channel
 F46C          LF46C:
 F46C 20 85 D8   JSR getbyt
 F46F F0 01      BEQ LF472
@@ -9790,3 +10043,5 @@ FFFC          idskint = * + 2
 FFFA E7 FF B7   .BYTE $E7,$FF,$B7
 FFFE          isysirq = * + 1
 FFFD F2 11 C6   .BYTE $F2,$11,$C6
+
+; reset vector is $F2B7

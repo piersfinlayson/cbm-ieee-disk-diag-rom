@@ -1,0 +1,86 @@
+GLOBAL {
+    STARTADDR       $FC00;
+    PAGELENGTH      0;
+    CPU             "6502";
+};
+
+SEGMENT     { START $FC00;  END $FFFF;  NAME "firmware"; };
+
+RANGE   { START $FC00;  END $FC03;  TYPE ByteTable; };
+RANGE   { START $FFFA;  END $FFFF;  TYPE AddrTable; };
+RANGE   { START $FFE8;  END $FFE9;  NAME "PH_IN"; TYPE ByteTable; COMMENT "Phase shift inward"; };
+RANGE   { START $FFEA;  END $FFEB;  NAME "MOTOR_BITS"; TYPE ByteTable; COMMENT "Motor on bits"; };
+RANGE   { START $FFEC;  END $FFED;  NAME "PH_OUT"; TYPE ByteTable; COMMENT "Phase shift outward"; };
+
+LABEL { ADDR $FC09;     NAME "start"; COMMENT "Reset vector points here"; };
+LABEL { ADDR $FC12;     NAME "zp_test"; COMMENT "The zero page test also initializes the JOBS array"; };
+LABEL { ADDR $FC16;     NAME "zp_byte_error";   COMMENT "Loop forever if ZP error"; };
+LABEL { ADDR $FC18;     NAME "init_job"; };
+LABEL { ADDR $FC1C;     NAME "continue_zp_test"; };
+LABEL { ADDR $FC1E;     NAME "init_reg_ram";   COMMENT "Init registers and shared RAM.\n; X is now $FF"; };
+LABEL { ADDR $FC54;     NAME "start_job_processing"; COMMENT "Process jobs queue, starting at job 14 ($0E - highest priority)"; };
+LABEL { ADDR $FC8D;     NAME "skip_to_next_job"; };
+LABEL { ADDR $FD20;     NAME "execute_ram_code"; COMMENT "Executes code at address $X00 where X is job number + 5\n; So, for job 0, executes code at $0500"; };LABEL { ADDR $FC65;     NAME "non_execute_job"; COMMENT "Job not requiring code execution from RAM"; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+# LABEL { ADDR $FC00;     NAME ""; COMMENT ""; };
+
+LABEL { ADDR $FC56;     NAME "job_processing"; COMMENT "Process a job"; };
+LABEL { ADDR $FF82;     NAME "irq_handler"; };
+LABEL { ADDR $FFFA;     NAME "nmi_vector"; };
+LABEL { ADDR $FFFC;     NAME "reset_vector"; };
+LABEL { ADDR $FFFE;     NAME "irq_vector"; };
+
+# Zero page variables - disk drive controller
+LABEL { NAME "CLOCK"; ADDR $0000; COMMENT "System clock/timer"; };
+LABEL { NAME "MTRTM"; ADDR $0001; COMMENT "Motor timer"; };
+LABEL { NAME "DRVST"; ADDR $0003; COMMENT "Drive status"; };
+LABEL { NAME "STEPS"; ADDR $0005; COMMENT "Stepper motor steps"; };
+LABEL { NAME "COW"; ADDR $0007; COMMENT "Copy on write flag"; };
+LABEL { NAME "WORK"; ADDR $0008; COMMENT "Work area/scratch"; };
+LABEL { NAME "DTRCK"; ADDR $000A; COMMENT "Destination track"; };
+LABEL { NAME "DSECT"; ADDR $000B; COMMENT "Destination sector"; };
+LABEL { NAME "CSECT"; ADDR $000C; COMMENT "Current sector"; };
+LABEL { NAME "STAB"; ADDR $000D; COMMENT "Sector table"; };
+LABEL { NAME "DRIVE"; ADDR $0012; COMMENT "Drive number"; };
+LABEL { NAME "TRACK"; ADDR $0013; COMMENT "Current track"; };
+LABEL { NAME "NEXTS"; ADDR $0014; COMMENT "Next sector"; };
+LABEL { NAME "SECTR"; ADDR $0015; COMMENT "Sector number"; };
+LABEL { NAME "BUFPT"; ADDR $0016; COMMENT "Buffer pointer"; };
+LABEL { NAME "BUFPT_HI"; ADDR $0017; COMMENT "Buffer pointer - high byte"; };
+LABEL { NAME "HDRPNT"; ADDR $0018; COMMENT "Header pointer"; };
+LABEL { NAME "FTNUM"; ADDR $001A; COMMENT "File table number"; };
+LABEL { NAME "IP"; ADDR $001B; COMMENT "Instruction pointer"; };
+LABEL { NAME "IOB"; ADDR $001E; COMMENT "I/O block"; };
+LABEL { NAME "JOBNUM"; ADDR $001F; COMMENT "Job number"; };
+
+# VIA 6522 registers
+LABEL { NAME "VIA_VB"; ADDR $0040; COMMENT "VIA output register B"; };
+LABEL { NAME "VIA_DIN"; ADDR $0041; COMMENT "VIA output register A"; };
+LABEL { NAME "VIA_VDDRB"; ADDR $0042; COMMENT "VIA data direction register B"; };
+LABEL { NAME "VIA_T1LL"; ADDR $0044; COMMENT "VIA Write Latch (+ read counter)"; };
+LABEL { NAME "VIA_TIMER"; ADDR $0045; COMMENT "VIA timer"; };
+LABEL { NAME "VIA_ACR"; ADDR $004B; COMMENT "VIA Auxiliary Control Register"; };
+LABEL { NAME "VIA_PCR"; ADDR $004C; COMMENT "VIA Peripheral Control Register"; };
+LABEL { NAME "VIA_IFR"; ADDR $004D; COMMENT "Interrupt Flag Register"; };
+LABEL { NAME "VIA_IER"; ADDR $004E; COMMENT "Interrupt Enable Register"; };
+
+# RIOT 6530 registers  
+LABEL { NAME "RIOT_DOUT"; ADDR $0080; COMMENT "6530 RIOT output register"; };
+LABEL { NAME "RIOT_EOUT"; ADDR $0081; COMMENT "6530 RIOT output register"; };
+LABEL { NAME "RIOT_PB"; ADDR $0082; COMMENT "RIOT port B"; };
+LABEL { NAME "RIOT_DDRB"; ADDR $0083; COMMENT "RIOT data direction register B"; };
+LABEL { NAME "x8F"; ADDR $008F; COMMENT "Unknown"; };
+
+# Variables at the start of shared RAM
+LABEL { NAME "TICK"; ADDR $0400; COMMENT "Tick counter"; };
+LABEL { NAME "DELAY"; ADDR $0401; COMMENT "Delay timer"; };
+LABEL { NAME "CUTMT"; ADDR $0402; COMMENT "Cut motor timer"; };
+LABEL { NAME "JOBS"; ADDR $0403; COMMENT "Job queue/status"; };
+LABEL { NAME "x0412"; ADDR $0412; COMMENT "Unknown variable"; };

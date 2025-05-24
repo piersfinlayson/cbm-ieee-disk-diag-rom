@@ -1,5 +1,8 @@
 ; This source code is a disaseembly of a Commodore 2040/3040/4040 disk drive
 ; 6504 ROM (located in the 6530 UK3).
+;
+; This ROM matches both 901466-01.bin and 901466-02.bin from zimmers.net (i.e
+; they are identical).
 ; 
 ; The code is Copyright (c) Commodore Business Machines, Inc.
 ;
@@ -164,7 +167,6 @@
 ; 6504 doesn't expose A13, A14, and A15 so you could argue it is addressing
 ; $1C00, but as you can see, the code references itself at $FC00.)
  *=$FC00
-
 
 ;===============================================================================
 ; DISK CONTROLLER INITIALIZATION ROUTINE
@@ -969,7 +971,7 @@
                                           ; During BUMP, this moves counter from negative
                                           ; toward zero, tracking our progress to track 0
  
- FFD2  FD EB FF             SBC ANBB,X     ; Adjust phase for outward movement
+ FFD2  FD EB FF             SBC ANDB,X     ; Adjust phase for outward movement
                                           ; This rotates the stepper motor phase pattern
                                           ; ANDB+0=$04, ANDB+1=$01 (based on drive)
  
