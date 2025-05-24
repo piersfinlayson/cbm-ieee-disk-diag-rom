@@ -11,9 +11,11 @@
 .export build_rom_info_str
 .export build_status_str
 .export build_invalid_channel_str
+.export build_drive_type_str
 
 ; Imports
 .import ROM_INFO_STR_TABLE_LEN
+.import drive_type_table
 .import rom_info_str_table
 .import talk_str_table
 .import TALK_STR_TABLE_LEN, TALK_STR_TABLE_ENTRY_LEN
@@ -21,6 +23,7 @@
 .import StrZeroPage, StrRam, Str6504Space, StrBoot, StrTakeover
 .import StrFailed, StrPassed, StrNotAttempted, StrSpaceDashSpace
 .import StrTestsFailed, StrTestsPassed, StrInvalidChannel
+.import StrDriveType
 .import StrChannel, StrStatus
 
 ; Includes
@@ -378,11 +381,12 @@ add_space_dash_space:
 @done:
     RTS
 
-; Add ", " - 13 bytes, would be 14 bytes including string if we used the
+; Add "<char> " - 11 bytes, would be 12 bytes including string if we used the
 ; add_string_no_nl approach.  (It takes fewer bytes to do 2 chars this way,
 ; but is cheaper to do 3 and more chars the other way.)
-add_comma_space:
-    LDA #$2C                ; Comma
+;
+; A includes the character to add, and is overwritten by the result
+add_char_space:
     JSR add_char
     BEQ @done               ; Exit if buffer full
 
@@ -416,7 +420,8 @@ add_failed_zp_chips:
     LDA NROC                ; Check if we've output any chips yet
     BEQ @first_chip         ; Skip comma for first chip
 
-    JSR add_comma_space
+    LDA #$2C                ; add ", "
+    JSR add_char_space
     BEQ @done               ; Exit if buffer full
 
 @first_chip:
@@ -484,7 +489,8 @@ add_failed_ram_chips:
     LDA NROC                ; Check if we've output any chips yet
     BEQ @skip_comma         ; Skip comma for first chip
 
-    JSR add_comma_space
+    LDA #$2C                ; add ", "
+    JSR add_char_space
     BEQ @done               ; Exit if buffer full
 
 @skip_comma:
@@ -664,6 +670,45 @@ build_test_results_str:
     JSR mark_last_byte_str
     RTS
 
+; Builds drive type string
+build_drive_type_str:
+    JSR setup_string_buf
+
+    LDA #<StrDriveType
+    STA STR_PTR
+    LDA #>StrDriveType
+    STA STR_PTR+1
+    JSR add_string_no_nl
+    BEQ @done                   ; Exit if buffer full
+
+    LDA #$3A                    ; Add ': '
+    JSR add_char_space
+    BEQ @done                   ; Exit if buffer full
+
+    TXA
+    PHA
+    LDX #$00
+@drive_type_loop:
+    LDA drive_type_table,X      ; Get the drive type byte
+    BMI @match                  ; Last entry is $FF, with unknown drive type
+    CMP DRIVE_TYPE
+    BEQ @match                  ; If it matches, go to match
+    INX
+    INX
+    INX
+    BNE @drive_type_loop        ; Loop until we find a match
+@match:
+    LDA drive_type_table+1,X    ; Get the low byte of the string pointer
+    STA STR_PTR
+    LDA drive_type_table+2,X    ; Get the high byte of the string pointer
+    STA STR_PTR+1
+    PLA
+    TAX                         ; Restore X from stack   
+    JSR add_string_no_nl        ; Add the drive type string
+
+@done:  
+    RTS
+
 ; Build a string listing all available channels and their purposes.
 ; Format: "Channel X: Description" for each channel
 build_channel_listing_str:
@@ -687,13 +732,9 @@ build_channel_listing_str:
     LDX #$00                ; We don't want leading zeros on the number
     JSR output_decimal_byte
     BCS @done               ; Exit if buffer full (carry set)
-    
-    ; Add ": " text
-    LDA #$3A                ; Colon character
-    JSR add_char
-    BEQ @done
-    LDA #$20                ; Space character
-    JSR add_char
+
+    LDA #$3A                ; Add ': '
+    JSR add_char_space
     BEQ @done
     
     ; Add channel description
@@ -890,7 +931,6 @@ output_decimal_byte:
     LDA STJ         ; Restore original A
     SEC             ; Set carry to indicate buffer is full
     RTS
-
 
 ; Don't inline - while only called once, the complicated RTS logic would be
 ; expensive to inline (would equire JMPs/branches), hence no savings.

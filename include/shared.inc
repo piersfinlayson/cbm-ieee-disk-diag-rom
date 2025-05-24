@@ -93,7 +93,8 @@ STATUS_6504_RESETTING = $FF
 ; 6502/6504 shared job of type execute.  Must be ORed with $80 to indicate to
 ; the 6504, running stock ROM code, that it should execute our code.  This
 ; comes from the 6504 ROM (901466).
-JOB_EXEC = $60
+JOB_EXEC_DOS1 = $60 | $80   ; 901466-02
+JOB_EXEC_DOS2 = $D0         ; 901466-04
 JOB_BUMP = $40
 .endif
 

@@ -115,7 +115,7 @@ with_stack_main:
     JSR between_tests
 
     ; Check the 6504 booted sucessfully
-    JSR check_6504_booted
+    JSR check_sec_booted
 
     JSR between_tests
 
@@ -123,7 +123,7 @@ with_stack_main:
     BNE @6504_failed        ; If not, skip to next test
 
     ; 6504 boot test worked - so attempt to takeover the 6504
-    JSR control_6504
+    JSR control_sec
 
     JSR between_tests
 
@@ -667,20 +667,49 @@ test_ram_byte_pattern:
     RTS                 ; Return from subroutine
 
 
-; Check that the 6504 booted successfully.
+; Check that the secondary processor booted successfully.
+;
+; For the 2040/3040/4040, the secondary processor sets a bunch of shared RAM
+; values we can check to see if it has booted successfully.
 ;
 ; We use shared memory locations to check this using the values in
 ; - SharedRamOffsets
 ; - SharedRamInitValues
 ;
-; If any of these values are not set appropriately, it is likely 6504 has not
-; booted.  It is possible that the shared RAM has failed, but we check most
-; of the chips providing these locations prior to calling this, so should be
-; OK.
+; If any of these values are not set appropriately, it is likely the secondary
+; has not booted.  It is possible that the shared RAM has failed, but we
+; check most of the chips providing these locations prior to calling this, so
+; should be OK.
+;
+; However, the 8050/8250 secondary firmware operates differently, and only
+; sets a single shared RAM location - $1000 ($0400 from its perspective).
+; It sets this to 2, waits until it gets set back to 0, then sets it to 2
+; again.  Once it is set to 0 again, it will execute the code at $0500 ($1100
+; from the primary processor's perspective).  Here we will check that it is 2
+; and set it to 0.  That should leave it as a 2 (after the secondary sets it
+; back to 2).
 ;
 ; Returns A set to 0 on success, non-zero (bits set indicating which values
 ; were incorrect, starting as LSB) on failure.
-check_6504_booted:
+check_sec_booted:
+    LDA SHARED_RAM_6502_START   ; Check if an 8050/8250
+    CMP #$02                    ; If it is 2, we assume it is an 8050/8250
+    BNE @not_8050
+
+    ; It's an 8050/8250.  Set the drive type.  Right now we don't know if this
+    ; is a 8050 or 8250.  Only the secondary processor can tell us that - a
+    ; jumper attached to PB4 of the 6530 is open/low for the 8050 and closed/
+    ; high for the 8250.  Let's assume it's an 8050 for now.
+    LDA #DRIVE_TYPE_QD_SS
+    STA DRIVE_TYPE
+
+    ; Now set the shared RAM location to 0, so the secondary processor
+    ; continues booting (sets shared RAM back to 2!).
+    LDA #$00                    ; Set shared RAM location to 0
+    STA SHARED_RAM_6502_START   ; Store it in the shared RAM location
+    BEQ @done
+
+@not_8050:
     ; Initialize variables
     LDY #$00                    ; Use Y as index into shared RAM offsets/values
     STY BLI                     ; Set last byte MSB to 0
@@ -724,7 +753,7 @@ check_6504_booted:
     LDA RESULT_6504_BOOT        ; Load the result into accumulator
     RTS
 
-; Attempt to take control of the 6504 processor.
+; Attempt to take control of the secondary processor.
 ;
 ; This is done by copying a routine to the 6504 processor to take control
 ; of it.  It then sits in a loop checking 2 specific bytes of shared RAM.
@@ -741,11 +770,11 @@ check_6504_booted:
 ; In fact, we can't guarantee the 6504 is running (or even present).  So this
 ; is a good test of that - we time out if we don't get a response indicating
 ; our takeover has succeeded.
-control_6504:
-    JSR takeover_6504
+control_sec:
+    JSR takeover_sec
 
     ; Check if the 6504 has paused - takeover returns A = $00 if it has, $01 if
-    ; it hasn't.  The last thing takeover_6504 does is LDA with the value, so
+    ; it hasn't.  The last thing takeover_sec does is LDA with the value, so
     ; we don't need to test it - test the Z flag directly instead.
     BEQ @success
 
@@ -887,9 +916,35 @@ delay:
 ;
 ; Returns with A = $00 if the 6504 has paused, $01 if it has not responded.
 ; Also returns Z flag set if the 6504 has paused.
-takeover_6504:
-    JSR copy_6504_cmd           ; Copy the 6504 control routine to shared RAM
-    JSR exec_6504_job           ; Trigger the 6504 to execute this routine
+takeover_sec:
+    JSR copy_sec_cmd        ; Copy the 6504 control routine to shared RAM
+
+    ; Check whether we think the drive is an 8050
+    LDA DRIVE_TYPE
+    CMP #DRIVE_TYPE_QD_SS
+    BCS @8050
+
+    ; Try to takeover as DOS 1 2040/3040/4040
+    LDA #JOB_EXEC_DOS1      ; Send execute command
+    JSR exec_sec_job        ; Trigger the 6504 to execute this routine
+    BEQ @finished           ; If it executed, we're done
+
+    ; That failed.  Try to takeover as DOS 2 2040/3040/4040
+    LDA #JOB_EXEC_DOS2      ; Send execute command
+    JSR exec_sec_job        ; Trigger the 6504 to execute this routine
+    BNE @finished           ; Failed, we're done
+
+    ; We succeed in taking over the secondary on the second time of asking.
+    ; This means we detected a DOS 2 drive.  Set the drive type:
+    LDA #DRIVE_TYPE_DD_DOS2
+    STA DRIVE_TYPE
+
+@finished:
+    RTS                     ; Return - don't try 8050 code
+
+@8050:
+    LDA #$00
+    JSR exec_sec_job
     RTS
 
 ; Copy the 6504 cmd to the shared RAM, at $1100, which is job 0.
@@ -897,7 +952,7 @@ takeover_6504:
 ; Note that the max length of a code block is 255 bytes.
 ;
 ; Will overwrite A, X and Y
-copy_6504_cmd:
+copy_sec_cmd:
     ; Set up the source address for the 6504 code we want to copy
     LDA #<secondary_start   ; Store the low byte of stored 6504 code
     .assert <secondary_start = $00, error, "6504 code not at $00"
@@ -998,13 +1053,21 @@ init_6504:
     LDA #$00                ; Success
     RTS
 
-; Starts the 6504 job to execute code, using job 0, and assumes code is already
-; loaded to appropriate address, 6502:$1100, 6504:$500.
+; Starts the secondary executing our code (which we assumes has alredy been
+; loaded at $1100/$0500).
+;
+; On the 2040/3040/4040 is does this by triggering an execute job, using job
+; 0.
+;
+; On the 8050/8250 is does this by setting the byte at $1000/$0400 to 0.
+;
+; A contains 0 if we want to use the 8050 mechanism.
+; Otherwise it contains the value to set in job slot 0 (for 2040/3040/4040).
 ;
 ; Overwrites X and Y.
 ;
 ; Returns A = $00 if successfully executed the job $01 otherwise.
-exec_6504_job:
+exec_sec_job:
     ; Set shared status location state, and clear shared command locations
     LDX #STATUS_6504_NONE
     STX STATUS_6504             ; Set the status to none
@@ -1012,10 +1075,17 @@ exec_6504_job:
     STX CMD1              ; Set both commands to none
     STX CMD2
 
-    ; Send the execute command 
-    LDA #(JOB_EXEC | $80)   ; Send execute command
-    STA JOB_0_SLOT          ; Store in job slot 0
+    CMP #$00                ; Check if we are using the 8050 mechanism
+    BEQ @8050               ; If so, branch to 8050 code
 
+    ; Send the execute command 
+    STA JOB_0_SLOT          ; Store in job slot 0
+    BNE @continue
+
+@8050:
+    STA SHARED_RAM_6502_START
+
+@continue:
     LDX #STATUS_6504_RUNNING
     JSR wait_6504_status
     RTS                         ; Return

@@ -54,8 +54,8 @@ RP1 = TEMP_PTR1         ; test_ram_page - pointer to ram test table
 RP2 = TEMP_PTR2         ; test_ram_byte(_pattern) - pointer to byte under test
 
 ; Used by routines to check 6504 booted
-BRBI = TEMP_A           ; check_6504_booted - result bit index
-BLI = TEMP_B            ; check_6504_booted - last byte indicator
+BRBI = TEMP_A           ; check_sec_booted - result bit index
+BLI = TEMP_B            ; check_sec_booted - last byte indicator
 
 ; Used by routines to control 6504
 CP1 = TEMP_PTR1         ; copy_6504_cmd - pointer to code source
@@ -128,12 +128,12 @@ DEVICE_ID = $22 + ZP_OFFSET
 ; Bits 4-7 cover the upper nibble of the page number ($1x-$4x)
 RESULT_RAM_TEST = $23 + ZP_OFFSET
 
-; Used to store test results from check_6504_booted.
+; Used to store test results from check_sec_booted.
 ; - Bit 0 contains 0 if successful, 1 if failure - see TESTS_6502
 ;   for whether this has been attempted (and hence this bit is valid)
 RESULT_6504_BOOT = $24 + ZP_OFFSET
 
-; Used to store test results from control_6504.
+; Used to store test results from control_sec.
 RESULT_6504_TO = $25 + ZP_OFFSET
 
 ; Used to store test results from test_drive.
@@ -145,7 +145,10 @@ RESULT_DRIVE1 = $27 + ZP_OFFSET
 ; talk.
 DEVICE_STATUS = $28 + ZP_OFFSET
 
-; Reserved for future use: $29-$2D
+; Used to store the type of disk drive being tested.
+DRIVE_TYPE = $2A
+
+; Reserved for future use: $2A-$2D
 
 ; Used to dynamically change the interrupt handler - must be set before
 ; enabling interrupts

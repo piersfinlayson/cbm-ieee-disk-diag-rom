@@ -72,3 +72,9 @@ IEEE_DIAG_TERM = $00
 DEVICE_STATUS_BOOTED = 73
 DEVICE_STATUS_OK = 0
 DEVICE_STATUS_INTERNAL_ERROR = 99
+
+; Drive types
+DRIVE_TYPE_DD_DOS1 = 0  ; Double density drive (2040/3040/4040) with DOS 1
+DRIVE_TYPE_DD_DOS2 = 1  ; Double density drive with DOS 2
+DRIVE_TYPE_QD_SS = 2  ; Quad density single sided (8050)
+DRIVE_TYPE_QD_DS = 3  ; Quad density double sided (8250)

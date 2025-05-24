@@ -11,10 +11,11 @@
 .export StrZeroPage, StrRam, Str6504Space, StrBoot, StrTakeover
 .export StrFailed, StrPassed, StrNotAttempted, StrSpaceDashSpace
 .export StrTestsFailed, StrTestsPassed, StrInvalidChannel
+.export StrDriveType
 .export StrChannel, StrStatus
 
 ; Table exports
-.export talk_str_table, rom_info_str_table
+.export drive_type_table, talk_str_table, rom_info_str_table
 .export TALK_STR_TABLE_ENTRY_LEN, TALK_STR_TABLE_LEN, ROM_INFO_STR_TABLE_LEN
 .export RamTest0, RamTest1, RamTests, RamTestMask
 .export RamTestLedPattern, RamTestBytePattern
@@ -24,8 +25,10 @@
 .import build_channel_listing_str
 .import build_summary_str
 .import build_test_results_str
+.import build_drive_type_str
 .import build_rom_info_str
 .import build_status_str
+.import build_drive_type_str
 
 ; Includes
 .include "include/macros.inc"
@@ -46,7 +49,7 @@
 CbmString StrRomName, "commodore ieee disk drive diagnostics rom"
 CbmString StrVersion, "version: "
 CbmString StrCopyright, "(c) 2025 piers finlayson"
-CbmString StrRepo, "https://github.com/piersfinlayson/cbm-ieee-disk-diag-rom"
+CbmString StrRepo, "https://piers.rocks/u/ieeedr"
 
 ; Boot string, provided alongside status code 73.  Our equivalent of:
 ; "CBM DOS V2.6 1541"
@@ -78,6 +81,11 @@ CbmString StrNotImplemented, "not implemented"
 CbmString StrTestsFailed, "test(s) failed"
 CbmString StrTestsPassed, "all tests passed"
 CbmString StrInvalidChannel, "invalid channel"
+CbmString Str4040Dos1, "2040/3040 DOS1"
+CbmString Str4040Dos2, "4040"
+CbmString Str8050, "8050"
+CbmString Str8250, "8250"
+CbmString StrUnknown, "unknown"
 
 ; Channel string
 CbmString StrChannel, "channel "
@@ -87,11 +95,26 @@ CbmString StrChannelListing, "channel list"
 CbmString StrRomInfo, "rom info"
 CbmString StrTestResults, "test results"
 CbmString StrTestSummary, "test summary"
+CbmString StrDriveType, "drive type"
 CbmString StrStatus, "drive status"
 
 ;
 ; Tables
 ;
+
+; Drive type table
+drive_type_table:
+    .byte DRIVE_TYPE_DD_DOS1
+    .word Str4040Dos1
+    .byte DRIVE_TYPE_DD_DOS2
+    .word Str4040Dos2
+    .byte DRIVE_TYPE_QD_SS
+    .word Str8050
+    .byte DRIVE_TYPE_QD_DS
+    .word Str8250
+drive_type_unknown:
+    .byte $FF
+    .word StrUnknown
 
 ; Table containing list of channels which are supported, and their mappings to
 ; - The string describing it (used in the channel - channel listing)
@@ -121,7 +144,10 @@ TALK_STR_TABLE_ENTRY_LEN = (END_TALK_STR_TABLE_FIRST_ENTRY - talk_str_table)
     .byte 2                         ; Channel num
     .word StrTestResults
     .word build_test_results_str
-    .byte 14                         ; Channel num
+    .byte 3                         ; Channel num
+    .word StrDriveType
+    .word build_drive_type_str
+    .byte 14                        ; Channel num
     .word StrRomInfo
     .word build_rom_info_str
     .byte 15                        ; Channel num
@@ -191,9 +217,12 @@ RamTestBytePattern:
 ; Only 8 offsets/byte tests are supported by check_6504_booted.
 ;
 ; We check:
-; - $1000 ($400 on the 6504) - TICK, initialized to $0F
-; - $1001 ($401 on the 6504) - DELAY, initialized to $32
-; - $1002 ($402 on the 6504) - CUTMT, initialized to $FF
+; - $1000 ($400 on the secondary) - TICK, initialized to $0F
+; - $1001 ($401 on the secondary) - DELAY, initialized to $32
+; - $1002 ($402 on the secondary) - CUTMT, initialized to $FF
+;
+; These values are the same for both 901466-02 and 901466-04 (both DOS 1 and
+; DOS 2 versions of the secondary processor's firmware).
 SharedRamOffsets:
     .byte TICK_OFFSET, DELAY_OFFSET, CUTMT_OFFSET | $80
 .assert SharedRamInitValues - SharedRamOffsets <= 8, error, "Too many shared RAM locations to check"
