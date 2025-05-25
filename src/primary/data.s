@@ -211,7 +211,9 @@ RamTestLedPattern:
 RamTestBytePattern:
     .byte $FF, $55, $AA, $A5, $5A, $24, $42, $00
 
-; Offsets from start of shared RAM that we check for 6504 aliveness.
+; Offsets from start of shared RAM that we check for 6504 aliveness on the
+; 2040, 3040 and 4040 drives.
+;
 ; We set the MSB for the last value.
 ;
 ; Only 8 offsets/byte tests are supported by check_6504_booted.
@@ -222,7 +224,10 @@ RamTestBytePattern:
 ; - $1002 ($402 on the secondary) - CUTMT, initialized to $FF
 ;
 ; These values are the same for both 901466-02 and 901466-04 (both DOS 1 and
-; DOS 2 versions of the secondary processor's firmware).
+; DOS 2 versions of the secondary processor's firmware).  Note that while TICK
+; is actually initialized to $3F on the DOS 2 version, it is quickly changed
+; to $0F.  As it takes us a while to check the secondary is alive, this should
+; be fine.
 SharedRamOffsets:
     .byte TICK_OFFSET, DELAY_OFFSET, CUTMT_OFFSET | $80
 .assert SharedRamInitValues - SharedRamOffsets <= 8, error, "Too many shared RAM locations to check"

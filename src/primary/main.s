@@ -705,7 +705,7 @@ check_sec_booted:
 
     ; Now set the shared RAM location to 0, so the secondary processor
     ; continues booting (sets shared RAM back to 2!).
-    LDA #$00                    ; Set shared RAM location to 0
+    LDA #$00                    ; Set shared RAM start to 0
     STA SHARED_RAM_6502_START   ; Store it in the shared RAM location
     BEQ @done
 
