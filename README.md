@@ -135,7 +135,7 @@ Reporting uses the following patterns:
 | ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#️static-ram-check-failed) |
 | ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#️uc1-zero-page-test-failed) |
 | ERR on, 1, 2 or 4 flashes on both DR1 and DR0 | [Secondary failed to boot](#️secondary-failed-to-boot) |
-| ERR on, 3 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
+| ERR on, 8 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
 | ERR LED off, DR0/DR1 flashing | [Reporting Device ID](#reporting-device-id) |
 
 ## 📋Detailed Test Information
@@ -268,7 +268,7 @@ If this fails, it may be a secondary processor failure, or a  problem with anoth
 
 It may also be a problem with the shared data bus.  As the data bus is shared between both CPUs, be suspicious of a shared bug problem if, as well as a secondary failure, you also get a [static RAM failure](#️static-ram-check-failed).
 
-If you get 2 or 4 flashes, instead of 1 flash - it may be an incompatibility between the diagnostics ROM and the secondary processor's ROM.
+The number of flashes signifies which values of shared RAM were not set as expected - the diagnostics checks bytes $1000/$0400, $1001/$0401 and $1002/$0402.  If it flashes 7 times, that signifies that none of the memory locations holds the expected values.
 
 ### ⚠️Failed to pause secondary
 

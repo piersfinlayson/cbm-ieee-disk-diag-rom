@@ -341,8 +341,8 @@ report_6504:
     LDA RESULT_6504_TO  ; Load the takeover result
     BEQ @done           ; It succeeded
 
-    ; 6504 takeover test failed - report it by flashing both LEDs 3 times
-    LDA #$03            ; Flash 2 times for 6504 control takeover failure
+    ; 6504 takeover test failed - report it by flashing both LEDs 8 times
+    LDA #$08            ; Flash 2 times for 6504 control takeover failure
     LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error ; Flash the LED the number of times indicated by the
