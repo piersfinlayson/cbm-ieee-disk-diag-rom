@@ -134,8 +134,8 @@ Reporting uses the following patterns:
 | ERR and DR1 LEDs blinking fast | [UE1 zero page test failed](#ue1-zero-page-test-failed) |
 | ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#️static-ram-check-failed) |
 | ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#️uc1-zero-page-test-failed) |
-| ERR on, 6 flashes on both DR1 and DR0 | [Secondary failed to boot](#️secondary-failed-to-boot) |
-| ERR on, 7 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
+| ERR on, 1 flash on both DR1 and DR0 | [Secondary failed to boot](#️secondary-failed-to-boot) |
+| ERR on, 2 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
 | ERR LED off, DR0/DR1 flashing | [Reporting Device ID](#reporting-device-id) |
 
 ## 📋Detailed Test Information
