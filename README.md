@@ -134,8 +134,8 @@ Reporting uses the following patterns:
 | ERR and DR1 LEDs blinking fast | [UE1 zero page test failed](#ue1-zero-page-test-failed) |
 | ERR on, 1-4 flashes on either DR1 or DR0 | [Static RAM check failed](#️static-ram-check-failed) |
 | ERR on, 5 flashes on DR0 | [UC1 zero page test failed](#️uc1-zero-page-test-failed) |
-| ERR on, 1 flash on both DR1 and DR0 | [Secondary failed to boot](#️secondary-failed-to-boot) |
-| ERR on, 2 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
+| ERR on, 1, 2 or 4 flashes on both DR1 and DR0 | [Secondary failed to boot](#️secondary-failed-to-boot) |
+| ERR on, 3 flashes on both DR1 and DR0 | [Failed to pause secondary](#️failed-to-pause-secondary) |
 | ERR LED off, DR0/DR1 flashing | [Reporting Device ID](#reporting-device-id) |
 
 ## 📋Detailed Test Information
@@ -267,6 +267,8 @@ If you see failures across all of your chips, it may instead be one or more fail
 If this fails, it may be a secondary processor failure, or a  problem with another chip on the secondary's address bus - for example the 6522 VIA UM3 or 6530 RRIOT UK3.  Or a problem with the shared RAM UC4 or UC5 (although unlikely if both static RAM tests passed).
 
 It may also be a problem with the shared data bus.  As the data bus is shared between both CPUs, be suspicious of a shared bug problem if, as well as a secondary failure, you also get a [static RAM failure](#️static-ram-check-failed).
+
+If you get 2 or 4 flashes, instead of 1 flash - it may be an incompatibility between the diagnostics ROM and the secondary processor's ROM.
 
 ### ⚠️Failed to pause secondary
 

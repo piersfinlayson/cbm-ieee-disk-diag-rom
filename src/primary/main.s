@@ -325,8 +325,9 @@ report_6504:
     LDA RESULT_6504_BOOT    ; Load the result of the 6504 test
     BEQ @report_takeover    ; It succeeded - no error to report
 
-    ; 6504 boot test failed - report it by flashing both LEDs 1 time
-    LDA #$01            ; Flash 1 time for 6504 control takeover failure
+    ; 6504 boot test failed - report it by flashing both LEDs.  Te number
+    ; of flashes will be the bit indicating which shared RAM location didn't
+    ; match the expected value - so 1, 2 or 4.  See SharedRamOffsets.
     LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error
@@ -340,8 +341,8 @@ report_6504:
     LDA RESULT_6504_TO  ; Load the takeover result
     BEQ @done           ; It succeeded
 
-    ; 6504 takeover test failed - report it by flashing both LEDs 2 times
-    LDA #$02            ; Flash 2 times for 6504 control takeover failure
+    ; 6504 takeover test failed - report it by flashing both LEDs 3 times
+    LDA #$03            ; Flash 2 times for 6504 control takeover failure
     LDY #DR01_LEDS      ; Set both DR0 and DR1 LEDs to show 6504 error
     LDX #$40            ; Set flash delay to 1/4 second
     JSR flash_led_error ; Flash the LED the number of times indicated by the
